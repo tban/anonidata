@@ -56,6 +56,7 @@ class PDFProcessor:
 
             # 3. Detectar PII
             logger.debug("Detectando datos personales...")
+            self.pii_detector.set_pdf_path(input_path)
             pii_matches = self.pii_detector.detect(pdf_data, ocr_data)
 
             # 4. Anonimizar
@@ -112,20 +113,27 @@ class PDFProcessor:
         }
 
         for match in pii_matches:
-            pii_type = match.type
+            pii_type = match.type.upper()
 
-            if pii_type in ["DNI", "NIE"]:
+            # DNI/NIE
+            if pii_type in ["DNI", "NIE", "DNI_NIE"]:
                 stats["dniCount"] += 1
-            elif pii_type == "PERSON":
+            # Nombres y apellidos
+            elif pii_type in ["PERSON", "NOMBRES_APELLIDOS"]:
                 stats["nameCount"] += 1
-            elif pii_type == "ADDRESS":
+            # Direcciones y domicilios
+            elif pii_type in ["ADDRESS", "DOMICILIOS"]:
                 stats["addressCount"] += 1
-            elif pii_type == "PHONE":
+            # Teléfonos
+            elif pii_type in ["PHONE", "TELEFONOS"]:
                 stats["phoneCount"] += 1
-            elif pii_type == "EMAIL":
+            # Emails
+            elif pii_type in ["EMAIL"]:
                 stats["emailCount"] += 1
+            # Firmas
             elif pii_type == "SIGNATURE":
                 stats["signatureCount"] += 1
+            # QR codes
             elif pii_type == "QR_CODE":
                 stats["qrCount"] += 1
 

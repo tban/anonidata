@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 export interface AnoniDataAPI {
   dialog: {
     openFile: () => Promise<string[]>;
+    showInfo: (message: string, title?: string) => Promise<boolean>;
   };
   process: {
     anonymize: (files: string[]) => Promise<ProcessResult>;
@@ -47,6 +48,7 @@ export interface FileResult {
 const api: AnoniDataAPI = {
   dialog: {
     openFile: () => ipcRenderer.invoke('dialog:openFile'),
+    showInfo: (message: string, title?: string) => ipcRenderer.invoke('dialog:showInfo', message, title),
   },
   process: {
     anonymize: (files: string[]) => ipcRenderer.invoke('process:anonymize', files),

@@ -118,7 +118,7 @@ class Anonymizer:
 
     def _apply_black_box(self, page: fitz.Page, bbox: tuple) -> None:
         """
-        Aplica redacción con caja negra (método más seguro)
+        Aplica tachado con caja negra (dibuja sobre el texto sin eliminarlo)
 
         Args:
             page: Página de PyMuPDF
@@ -126,18 +126,14 @@ class Anonymizer:
         """
         rect = fitz.Rect(bbox)
 
-        # Dibujar rectángulo negro relleno
+        # Dibujar rectángulo negro relleno sobre el texto
+        # NO eliminamos el contenido subyacente, solo lo cubrimos
         page.draw_rect(
             rect,
             color=None,
             fill=self.settings.redaction_color,
             overlay=True,
         )
-
-        # Método alternativo: usar redacción nativa de PyMuPDF
-        # Más seguro ya que elimina el contenido subyacente
-        annot = page.add_redact_annot(rect)
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE)
 
     def _apply_pixelation(self, page: fitz.Page, bbox: tuple) -> None:
         """

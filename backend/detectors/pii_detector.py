@@ -21,15 +21,18 @@ from processors.ocr_engine import OCRData, OCRResult
 from detectors.regex_patterns import RegexPatterns
 from detectors.visual_detector import VisualDetector
 from detectors.models import PIIMatch
+from detectors.rule_based_detector import RuleBasedDetector
 
 
 class PIIDetector:
     """Detector principal de PII"""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, pdf_path: Optional[Any] = None):
         self.settings = settings
         self.regex_patterns = RegexPatterns()
         self.visual_detector = VisualDetector(settings)
+        self.rule_based_detector = RuleBasedDetector()
+        self.pdf_path = pdf_path
 
         # Cargar modelo NLP
         self.nlp: Optional[Language] = None
@@ -57,6 +60,10 @@ class PIIDetector:
                     "Ejecutar: python -m spacy download es_core_news_lg"
                 )
 
+    def set_pdf_path(self, pdf_path: Any):
+        """Establece la ruta del PDF para el detector basado en reglas"""
+        self.pdf_path = pdf_path
+
     def detect(self, pdf_data: PDFData, ocr_data: OCRData) -> List[PIIMatch]:
         """
         Detecta PII en el documento
@@ -70,19 +77,27 @@ class PIIDetector:
         """
         matches = []
 
-        # 1. Detección basada en regex (en texto vectorial)
-        logger.debug("Detectando PII con regex...")
-        regex_matches = self._detect_with_regex(pdf_data.text_blocks)
-        matches.extend(regex_matches)
+        # 1. NUEVO: Detección basada en reglas configurables (con bboxes precisas)
+        if self.pdf_path:
+            logger.debug("Detectando PII con reglas configurables...")
+            rule_matches = self.rule_based_detector.detect_in_text_blocks(
+                pdf_data.text_blocks,
+                self.pdf_path
+            )
+            matches.extend(rule_matches)
 
-        # 2. Detección basada en regex (en texto OCR)
-        ocr_text_blocks = self._convert_ocr_to_text_blocks(ocr_data.results)
-        regex_ocr_matches = self._detect_with_regex(ocr_text_blocks)
-        matches.extend(regex_ocr_matches)
+            # También en bloques OCR
+            ocr_text_blocks = self._convert_ocr_to_text_blocks(ocr_data.results)
+            rule_ocr_matches = self.rule_based_detector.detect_in_text_blocks(
+                ocr_text_blocks,
+                self.pdf_path
+            )
+            matches.extend(rule_ocr_matches)
 
-        # 3. Detección NER (nombres, direcciones)
+        # 2. Detección NER (nombres, direcciones) - solo si está habilitada
         if self.nlp:
             logger.debug("Detectando PII con NER...")
+            ocr_text_blocks = self._convert_ocr_to_text_blocks(ocr_data.results)
             ner_matches = self._detect_with_ner(pdf_data.text_blocks)
             matches.extend(ner_matches)
 
@@ -90,7 +105,7 @@ class PIIDetector:
             ner_ocr_matches = self._detect_with_ner(ocr_text_blocks)
             matches.extend(ner_ocr_matches)
 
-        # 4. Detección visual (firmas, QR codes)
+        # 3. Detección visual (firmas, QR codes)
         logger.debug("Detectando PII visual...")
         visual_matches = self.visual_detector.detect(pdf_data)
         matches.extend(visual_matches)

@@ -94,6 +94,8 @@ function App() {
     setIsProcessing(true);
     setProcessResult(null);
 
+    const startTime = Date.now();
+
     try {
       const filePaths = files.map((f) => f.path);
 
@@ -103,6 +105,9 @@ function App() {
       );
 
       const result = await window.anonidata.process.anonymize(filePaths);
+
+      const endTime = Date.now();
+      const processingTimeSeconds = ((endTime - startTime) / 1000).toFixed(2);
 
       // Actualizar resultados
       setFiles((prev) =>
@@ -118,10 +123,68 @@ function App() {
       );
 
       setProcessResult(result);
+
+      // Contar archivos exitosos y fallidos
+      const successCount = result.results.filter((r) => r.status === 'success').length;
+      const errorCount = result.results.filter((r) => r.status === 'error').length;
+      const totalFiles = result.results.length;
+
+      // Mostrar mensaje según el resultado
+      if (successCount > 0 && errorCount === 0) {
+        // Todos los archivos procesados correctamente
+        await window.anonidata.dialog.showInfo(
+          `PROCESO COMPLETADO\n\n` +
+          `✓ Archivos procesados: ${successCount} de ${totalFiles}\n` +
+          `⏱ Tiempo de procesamiento: ${processingTimeSeconds} segundos\n\n` +
+          `IMPORTANTE: Por favor, revise manualmente los archivos anonimizados para verificar que no queden datos personales sin excluir.\n\n` +
+          `Es fundamental verificar que toda la información sensible haya sido correctamente anonimizada.`,
+          'Anonimización Completada'
+        );
+      } else if (successCount > 0 && errorCount > 0) {
+        // Algunos archivos fallaron
+        const errorMessages = result.results
+          .filter((r) => r.status === 'error')
+          .map((r) => `• ${r.inputFile.split('/').pop()}: ${r.error || 'Error desconocido'}`)
+          .join('\n');
+
+        await window.anonidata.dialog.showInfo(
+          `PROCESO COMPLETADO CON ERRORES\n\n` +
+          `✓ Archivos exitosos: ${successCount}\n` +
+          `✗ Archivos fallidos: ${errorCount}\n` +
+          `⏱ Tiempo de procesamiento: ${processingTimeSeconds} segundos\n\n` +
+          `ERRORES:\n${errorMessages}\n\n` +
+          `Por favor, revise los archivos que se procesaron correctamente.`,
+          'Proceso Completado con Errores'
+        );
+      } else {
+        // Todos los archivos fallaron
+        const errorMessages = result.results
+          .filter((r) => r.status === 'error')
+          .map((r) => `• ${r.inputFile.split('/').pop()}: ${r.error || 'Error desconocido'}`)
+          .join('\n');
+
+        await window.anonidata.dialog.showInfo(
+          `ERROR EN EL PROCESAMIENTO\n\n` +
+          `✗ No se pudo procesar ningún archivo\n` +
+          `⏱ Tiempo transcurrido: ${processingTimeSeconds} segundos\n\n` +
+          `ERRORES:\n${errorMessages}\n\n` +
+          `Por favor, verifique los archivos e intente nuevamente.`,
+          'Error en Procesamiento'
+        );
+      }
     } catch (error) {
       console.error('Error procesando archivos:', error);
       setFiles((prev) =>
         prev.map((f) => ({ ...f, status: 'error' as const }))
+      );
+
+      // Mostrar error de excepción
+      await window.anonidata.dialog.showInfo(
+        `ERROR CRÍTICO\n\n` +
+        `Ocurrió un error inesperado durante el procesamiento:\n\n` +
+        `${error instanceof Error ? error.message : 'Error desconocido'}\n\n` +
+        `Por favor, intente nuevamente o contacte soporte técnico.`,
+        'Error Crítico'
       );
     } finally {
       setIsProcessing(false);
@@ -302,7 +365,33 @@ function App() {
               disabled={isProcessing || files.every((f) => f.status === 'completed')}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-8 rounded-lg shadow-md transition-colors"
             >
-              {isProcessing ? 'Procesando...' : 'Anonimizar PDFs'}
+              {isProcessing ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg
+                    className="animate-spin h-5 w-5 text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Procesando...
+                </span>
+              ) : (
+                'Anonimizar PDFs'
+              )}
             </button>
           </div>
         )}

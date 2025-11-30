@@ -150,6 +150,16 @@ app.on('ready', () => {
     return result.filePaths;
   });
 
+  ipcMain.handle('dialog:showInfo', async (_event: any, message: string, title?: string) => {
+    await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: title || 'Información',
+      message: message,
+      buttons: ['Entendido'],
+    });
+    return true;
+  });
+
   ipcMain.handle('process:anonymize', async (_event: any, files: string[]) => {
     log.info(`Procesando ${files.length} archivos`);
 

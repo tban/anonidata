@@ -1,0 +1,89 @@
+{
+  "version": "1.0",
+  "description": "Reglas de anonimización con preservación de etiquetas",
+  "rules": [
+    {
+      "id": "dni_nie_con_etiqueta",
+      "name": "DNI/NIE con etiqueta",
+      "pattern": "(DNI:?\\s*)([XYZxyz]\\d{7}|\\d{8})[A-Za-z]\\b",
+      "redact_groups": [2],
+      "preserve_groups": [1],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": true,
+      "description": "Detecta DNI:/NIE: y preserva la etiqueta, redacta el número"
+    },
+    {
+      "id": "dni_nie_sin_etiqueta",
+      "name": "DNI/NIE sin etiqueta",
+      "pattern": "\\b([XYZxyz]\\d{7}|\\d{8})[A-Za-z]\\b",
+      "redact_groups": [0],
+      "preserve_groups": [],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": true,
+      "description": "Detecta DNI/NIE sin etiqueta previa"
+    },
+    {
+      "id": "nombres_con_prefijo",
+      "name": "Nombres con D./Dña.",
+      "pattern": "(D\\./Dña\\.?|Don|Doña)\\s+([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+(?:\\s+[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+)+)\\b",
+      "redact_groups": [2],
+      "preserve_groups": [1],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": true,
+      "description": "Detecta D./Dña. seguido de nombres, preserva el prefijo"
+    },
+    {
+      "id": "nombres_apellidos",
+      "name": "Nombres y apellidos generales",
+      "pattern": "\\b([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+(?:\\s+[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+)+)\\b",
+      "redact_groups": [0],
+      "preserve_groups": [],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": true,
+      "description": "Detecta 2 o más palabras capitalizadas consecutivas"
+    },
+    {
+      "id": "telefonos",
+      "name": "Teléfonos",
+      "pattern": "\\b(?:\\+?\\d{1,3}[\\s.-]?)?(?:\\d{3}[\\s.-]?){2,3}\\d{3}\\b",
+      "redact_groups": [0],
+      "preserve_groups": [],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta números de teléfono"
+    },
+    {
+      "id": "categoria_con_etiqueta",
+      "name": "Categoría con etiqueta",
+      "pattern": "(Categoría:?\\s+)(.+?)(?=\\s*\\n|$|DNI|Domicilio)",
+      "redact_groups": [2],
+      "preserve_groups": [1],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta Categoría: y preserva la etiqueta, redacta el valor"
+    },
+    {
+      "id": "domicilio_con_etiqueta",
+      "name": "Domicilio con etiqueta",
+      "pattern": "(Domicilio:?\\s+)(?:(?:C\\/|Calle|Av\\.?|Avenida|Pl\\.?|Plaza|Pº|Paseo|Camino|Cam\\.?|Carretera|Ctra\\.?|Travesía|Trv\\.?|Urbanización|Urb\\.)\\s+)?([A-ZÁÉÍÓÚÜÑa-záéíóúüñ\\s]+?)(?:,?\\s*)(\\d{1,3}[A-Za-z]?)(?:\\s*\\(\\d{5}\\))?\\b",
+      "redact_groups": [2, 3],
+      "preserve_groups": [1],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta Domicilio: y preserva la etiqueta, redacta dirección y número"
+    }
+  ],
+  "settings": {
+    "redaction_color": [0, 0, 0],
+    "redaction_char": "X",
+    "preserve_spacing": true,
+    "match_length": true
+  }
+}
