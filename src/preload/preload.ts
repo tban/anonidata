@@ -63,11 +63,24 @@ const api: AnoniDataAPI = {
   },
 };
 
+// Inyectar webUtils directamente para que funcione con drag & drop
+contextBridge.exposeInMainWorld('electronWebUtils', {
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
+});
+
 contextBridge.exposeInMainWorld('anonidata', api);
 
 // Declaración global para TypeScript
 declare global {
   interface Window {
     anonidata: AnoniDataAPI;
+    electronWebUtils: {
+      getPathForFile: (file: File) => string;
+    };
+  }
+
+  // Extender File para incluir la propiedad path de Electron
+  interface File {
+    path?: string;
   }
 }

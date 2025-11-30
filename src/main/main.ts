@@ -9,7 +9,9 @@ type BrowserWindowType = any;
 type ChildProcessType = any;
 
 // Simple isDev check - verificar si está empaquetado
-const isDev = !app.isPackaged;
+// En desarrollo: electron se ejecuta desde node_modules
+// En producción: app está empaquetado
+const isDev = process.env.NODE_ENV !== 'production' && /[\\/]electron[\\/]/.test(process.execPath);
 
 // Configuración de logging
 log.transports.file.level = 'info';
@@ -42,7 +44,7 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false, // Deshabilitado para permitir webUtils.getPathForFile()
     },
     title: 'AnoniData',
     show: false,

@@ -14,6 +14,7 @@ function App() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processResult, setProcessResult] = useState<ProcessResult | null>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
 
   const handleSelectFiles = useCallback(async () => {
     const filePaths = await window.anonidata.dialog.openFile();
@@ -28,6 +29,61 @@ function App() {
           progress: 0,
         };
       });
+      setFiles((prev) => [...prev, ...newFiles]);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragActive(false);
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    const pdfFiles = droppedFiles.filter(
+      (file) => file.type === 'application/pdf' || file.name.endsWith('.pdf')
+    );
+
+    // En Electron con sandbox: false, los File objects tienen la propiedad 'path'
+    const newFiles: FileItem[] = pdfFiles.map((file: any) => {
+      // Intentar primero acceder directamente a la propiedad path
+      let filePath = file.path;
+
+      // Si no existe, intentar con electronWebUtils
+      if (!filePath && window.electronWebUtils) {
+        try {
+          filePath = window.electronWebUtils.getPathForFile(file);
+        } catch (error) {
+          console.error('Error obteniendo ruta del archivo:', error);
+        }
+      }
+
+      // Si aún no tenemos ruta, usar el nombre como fallback
+      if (!filePath) {
+        filePath = file.name;
+      }
+
+      return {
+        path: filePath,
+        name: file.name,
+        size: file.size,
+        status: 'pending' as const,
+        progress: 0,
+      };
+    });
+
+    if (newFiles.length > 0) {
       setFiles((prev) => [...prev, ...newFiles]);
     }
   }, []);
@@ -94,8 +150,17 @@ function App() {
           <p className="text-gray-600">Anonimización de PDFs conforme a RGPD</p>
         </header>
 
-        {/* Select Files Button */}
-        <div className="border-4 border-dashed border-gray-300 bg-white rounded-lg p-12 mb-6 text-center">
+        {/* File Selection Area - Drag & Drop */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`border-4 border-dashed rounded-lg p-12 mb-6 text-center transition-colors ${
+            isDragActive
+              ? 'border-blue-500 bg-blue-50'
+              : 'border-gray-300 bg-white'
+          }`}
+        >
           <div className="text-gray-600">
             <svg
               className="mx-auto h-16 w-16 mb-4 text-gray-400"
@@ -110,12 +175,23 @@ function App() {
                 strokeLinejoin="round"
               />
             </svg>
-            <button
-              onClick={handleSelectFiles}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg shadow-md transition-colors mb-3"
-            >
-              Seleccionar PDFs
-            </button>
+            {isDragActive ? (
+              <p className="text-lg font-semibold text-blue-600 mb-3">
+                Suelta los archivos aquí...
+              </p>
+            ) : (
+              <>
+                <p className="text-lg mb-3">
+                  Arrastra archivos PDF aquí o
+                </p>
+                <button
+                  onClick={handleSelectFiles}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg shadow-md transition-colors mb-3"
+                >
+                  Seleccionar PDFs
+                </button>
+              </>
+            )}
             <p className="text-sm text-gray-500">
               Procesamiento 100% local - Tus datos nunca salen de tu ordenador
             </p>
