@@ -191,6 +191,11 @@ class RuleBasedDetector:
             Tupla (x0, y0, x1, y1) o None si no se puede calcular
         """
         try:
+            # Validar que block_bbox no tenga valores None
+            if block_bbox and None in block_bbox:
+                logger.warning(f"block_bbox contiene valores None: {block_bbox}")
+                return None
+
             page = doc[page_num]
             target_text = full_text[start_pos:end_pos]
 
@@ -230,10 +235,20 @@ class RuleBasedDetector:
         Returns:
             True si rect está dentro de bbox
         """
-        x0, y0, x1, y1 = bbox
+        try:
+            x0, y0, x1, y1 = bbox
 
-        # Verificar si el centro del rect está dentro del bbox
-        center_x = (rect.x0 + rect.x1) / 2
-        center_y = (rect.y0 + rect.y1) / 2
+            # Validar que ninguna coordenada sea None
+            if None in (x0, y0, x1, y1):
+                logger.warning(f"Bbox contiene valores None: {bbox}")
+                return False
 
-        return (x0 <= center_x <= x1) and (y0 <= center_y <= y1)
+            # Verificar si el centro del rect está dentro del bbox
+            center_x = (rect.x0 + rect.x1) / 2
+            center_y = (rect.y0 + rect.y1) / 2
+
+            return (x0 <= center_x <= x1) and (y0 <= center_y <= y1)
+
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Error en _rect_inside_bbox: {e}, bbox={bbox}")
+            return False

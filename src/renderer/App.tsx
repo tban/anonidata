@@ -15,6 +15,16 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processResult, setProcessResult] = useState<ProcessResult | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [completionData, setCompletionData] = useState<{
+    type: 'success' | 'partial' | 'error' | 'critical';
+    successCount: number;
+    errorCount: number;
+    totalFiles: number;
+    processingTime: string;
+    errors?: Array<{ file: string; error: string }>;
+    message?: string;
+  } | null>(null);
 
   const handleSelectFiles = useCallback(async () => {
     const filePaths = await window.anonidata.dialog.openFile();
@@ -129,63 +139,68 @@ function App() {
       const errorCount = result.results.filter((r) => r.status === 'error').length;
       const totalFiles = result.results.length;
 
-      // Mostrar mensaje según el resultado
+      // Preparar datos para el modal según el resultado
       if (successCount > 0 && errorCount === 0) {
         // Todos los archivos procesados correctamente
-        await window.anonidata.dialog.showInfo(
-          `PROCESO COMPLETADO\n\n` +
-          `✓ Archivos procesados: ${successCount} de ${totalFiles}\n` +
-          `⏱ Tiempo de procesamiento: ${processingTimeSeconds} segundos\n\n` +
-          `IMPORTANTE: Por favor, revise manualmente los archivos anonimizados para verificar que no queden datos personales sin excluir.\n\n` +
-          `Es fundamental verificar que toda la información sensible haya sido correctamente anonimizada.`,
-          'Anonimización Completada'
-        );
+        setCompletionData({
+          type: 'success',
+          successCount,
+          errorCount,
+          totalFiles,
+          processingTime: processingTimeSeconds,
+        });
       } else if (successCount > 0 && errorCount > 0) {
         // Algunos archivos fallaron
-        const errorMessages = result.results
+        const errors = result.results
           .filter((r) => r.status === 'error')
-          .map((r) => `• ${r.inputFile.split('/').pop()}: ${r.error || 'Error desconocido'}`)
-          .join('\n');
+          .map((r) => ({
+            file: r.inputFile.split('/').pop() || r.inputFile,
+            error: r.error || 'Error desconocido'
+          }));
 
-        await window.anonidata.dialog.showInfo(
-          `PROCESO COMPLETADO CON ERRORES\n\n` +
-          `✓ Archivos exitosos: ${successCount}\n` +
-          `✗ Archivos fallidos: ${errorCount}\n` +
-          `⏱ Tiempo de procesamiento: ${processingTimeSeconds} segundos\n\n` +
-          `ERRORES:\n${errorMessages}\n\n` +
-          `Por favor, revise los archivos que se procesaron correctamente.`,
-          'Proceso Completado con Errores'
-        );
+        setCompletionData({
+          type: 'partial',
+          successCount,
+          errorCount,
+          totalFiles,
+          processingTime: processingTimeSeconds,
+          errors,
+        });
       } else {
         // Todos los archivos fallaron
-        const errorMessages = result.results
+        const errors = result.results
           .filter((r) => r.status === 'error')
-          .map((r) => `• ${r.inputFile.split('/').pop()}: ${r.error || 'Error desconocido'}`)
-          .join('\n');
+          .map((r) => ({
+            file: r.inputFile.split('/').pop() || r.inputFile,
+            error: r.error || 'Error desconocido'
+          }));
 
-        await window.anonidata.dialog.showInfo(
-          `ERROR EN EL PROCESAMIENTO\n\n` +
-          `✗ No se pudo procesar ningún archivo\n` +
-          `⏱ Tiempo transcurrido: ${processingTimeSeconds} segundos\n\n` +
-          `ERRORES:\n${errorMessages}\n\n` +
-          `Por favor, verifique los archivos e intente nuevamente.`,
-          'Error en Procesamiento'
-        );
+        setCompletionData({
+          type: 'error',
+          successCount,
+          errorCount,
+          totalFiles,
+          processingTime: processingTimeSeconds,
+          errors,
+        });
       }
+      setShowCompletionModal(true);
     } catch (error) {
       console.error('Error procesando archivos:', error);
       setFiles((prev) =>
         prev.map((f) => ({ ...f, status: 'error' as const }))
       );
 
-      // Mostrar error de excepción
-      await window.anonidata.dialog.showInfo(
-        `ERROR CRÍTICO\n\n` +
-        `Ocurrió un error inesperado durante el procesamiento:\n\n` +
-        `${error instanceof Error ? error.message : 'Error desconocido'}\n\n` +
-        `Por favor, intente nuevamente o contacte soporte técnico.`,
-        'Error Crítico'
-      );
+      // Mostrar error crítico en modal
+      setCompletionData({
+        type: 'critical',
+        successCount: 0,
+        errorCount: files.length,
+        totalFiles: files.length,
+        processingTime: '0',
+        message: error instanceof Error ? error.message : 'Error desconocido',
+      });
+      setShowCompletionModal(true);
     } finally {
       setIsProcessing(false);
     }
@@ -426,6 +441,113 @@ function App() {
           </p>
         </footer>
       </div>
+
+      {/* Modal de Completación */}
+      {showCompletionModal && completionData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className={`p-8 rounded-t-2xl ${
+              completionData.type === 'success' ? 'bg-gradient-to-r from-green-500 to-green-600' :
+              completionData.type === 'partial' ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+              'bg-gradient-to-r from-red-500 to-red-600'
+            }`}>
+              <div className="flex items-center justify-between text-white">
+                <h2 className="text-3xl font-bold">
+                  {completionData.type === 'success' && '✓ Proceso Completado'}
+                  {completionData.type === 'partial' && '⚠ Completado con Errores'}
+                  {(completionData.type === 'error' || completionData.type === 'critical') && '✗ Error en el Procesamiento'}
+                </h2>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-8">
+              {/* Estadísticas */}
+              <div className="grid grid-cols-3 gap-4 mb-8">
+                <div className="text-center p-6 bg-gray-50 rounded-xl">
+                  <div className="text-4xl font-bold text-gray-800 mb-2">
+                    {completionData.totalFiles}
+                  </div>
+                  <div className="text-sm text-gray-600">Total de archivos</div>
+                </div>
+                <div className="text-center p-6 bg-green-50 rounded-xl">
+                  <div className="text-4xl font-bold text-green-600 mb-2">
+                    {completionData.successCount}
+                  </div>
+                  <div className="text-sm text-gray-600">Procesados</div>
+                </div>
+                <div className="text-center p-6 bg-gray-50 rounded-xl">
+                  <div className="text-4xl font-bold text-gray-800 mb-2">
+                    {completionData.processingTime}s
+                  </div>
+                  <div className="text-sm text-gray-600">Tiempo total</div>
+                </div>
+              </div>
+
+              {/* Mensaje de Éxito */}
+              {completionData.type === 'success' && (
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold text-blue-900 mb-3">
+                    ⚠️ Revisión Manual Requerida
+                  </h3>
+                  <p className="text-blue-800 leading-relaxed">
+                    Por favor, <strong>revise manualmente</strong> los archivos anonimizados para verificar que no queden datos personales sin excluir.
+                  </p>
+                  <p className="text-blue-800 leading-relaxed mt-2">
+                    Es fundamental verificar que toda la información sensible haya sido correctamente anonimizada.
+                  </p>
+                </div>
+              )}
+
+              {/* Lista de Errores */}
+              {completionData.errors && completionData.errors.length > 0 && (
+                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold text-red-900 mb-4">
+                    Errores Encontrados ({completionData.errorCount})
+                  </h3>
+                  <div className="space-y-3 max-h-60 overflow-y-auto">
+                    {completionData.errors.map((err, idx) => (
+                      <div key={idx} className="bg-white p-4 rounded-lg shadow-sm">
+                        <div className="font-medium text-red-900 mb-1">{err.file}</div>
+                        <div className="text-sm text-red-700">{err.error}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Mensaje Crítico */}
+              {completionData.type === 'critical' && completionData.message && (
+                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold text-red-900 mb-3">
+                    Error Crítico
+                  </h3>
+                  <p className="text-red-800 leading-relaxed mb-3">
+                    Ocurrió un error inesperado durante el procesamiento:
+                  </p>
+                  <code className="block bg-red-100 p-4 rounded text-sm text-red-900">
+                    {completionData.message}
+                  </code>
+                  <p className="text-red-800 leading-relaxed mt-3">
+                    Por favor, intente nuevamente o contacte soporte técnico.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-8 pb-8">
+              <button
+                onClick={() => setShowCompletionModal(false)}
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

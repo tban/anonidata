@@ -106,6 +106,7 @@ class Anonymizer:
             page: Página de PyMuPDF
             matches: Matches a redactar
         """
+        # Marcar todas las regiones para redacción
         for match in matches:
             bbox = match.bbox
 
@@ -116,9 +117,13 @@ class Anonymizer:
             elif self.settings.redaction_strategy == "blur":
                 self._apply_blur(page, bbox)
 
+        # Aplicar todas las redacciones de golpe (ELIMINA el contenido permanentemente)
+        # Esto borra el texto subyacente y lo reemplaza con el relleno especificado
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE)
+
     def _apply_black_box(self, page: fitz.Page, bbox: tuple) -> None:
         """
-        Aplica tachado con caja negra (dibuja sobre el texto sin eliminarlo)
+        Aplica redacción destructiva con caja negra (ELIMINA el contenido del PDF)
 
         Args:
             page: Página de PyMuPDF
@@ -126,18 +131,13 @@ class Anonymizer:
         """
         rect = fitz.Rect(bbox)
 
-        # Dibujar rectángulo negro relleno sobre el texto
-        # NO eliminamos el contenido subyacente, solo lo cubrimos
-        page.draw_rect(
-            rect,
-            color=None,
-            fill=self.settings.redaction_color,
-            overlay=True,
-        )
+        # Marcar región para redacción con relleno negro
+        # fill: color de relleno después de eliminar el contenido
+        page.add_redact_annot(rect, fill=self.settings.redaction_color)
 
     def _apply_pixelation(self, page: fitz.Page, bbox: tuple) -> None:
         """
-        Aplica pixelación a una región
+        Aplica pixelación a una región con redacción destructiva
 
         Args:
             page: Página de PyMuPDF
@@ -149,7 +149,7 @@ class Anonymizer:
             return
 
         try:
-            # Renderizar región
+            # Renderizar región ANTES de redactar
             rect = fitz.Rect(bbox)
             mat = fitz.Matrix(2.0, 2.0)  # 2x resolución
             pix = page.get_pixmap(matrix=mat, clip=rect)
@@ -173,13 +173,14 @@ class Anonymizer:
             # Convertir de vuelta a PIL
             pixelated_img = Image.fromarray(pixelated)
 
-            # Guardar imagen pixelada
+            # Guardar imagen pixelada como bytes
             img_bytes = io.BytesIO()
             pixelated_img.save(img_bytes, format='PNG')
             img_bytes.seek(0)
 
-            # Insertar imagen pixelada en el PDF
-            page.insert_image(rect, stream=img_bytes.read())
+            # Marcar región para redacción con la imagen pixelada como relleno
+            # IMPORTANTE: Esto ELIMINA el texto original
+            page.add_redact_annot(rect, fill=self.settings.redaction_color, image=img_bytes.getvalue())
 
         except Exception as e:
             logger.warning(f"Error aplicando pixelación: {e}, usando caja negra")
@@ -187,14 +188,14 @@ class Anonymizer:
 
     def _apply_blur(self, page: fitz.Page, bbox: tuple) -> None:
         """
-        Aplica difuminado gaussiano a una región
+        Aplica difuminado gaussiano a una región con redacción destructiva
 
         Args:
             page: Página de PyMuPDF
             bbox: Coordenadas
         """
         try:
-            # Renderizar región
+            # Renderizar región ANTES de redactar
             rect = fitz.Rect(bbox)
             mat = fitz.Matrix(2.0, 2.0)
             pix = page.get_pixmap(matrix=mat, clip=rect)
@@ -206,13 +207,14 @@ class Anonymizer:
             # Aplicar blur fuerte
             blurred = img.filter(ImageFilter.GaussianBlur(radius=20))
 
-            # Guardar
+            # Guardar imagen difuminada como bytes
             img_bytes = io.BytesIO()
             blurred.save(img_bytes, format='PNG')
             img_bytes.seek(0)
 
-            # Insertar en PDF
-            page.insert_image(rect, stream=img_bytes.read())
+            # Marcar región para redacción con la imagen difuminada como relleno
+            # IMPORTANTE: Esto ELIMINA el texto original
+            page.add_redact_annot(rect, fill=self.settings.redaction_color, image=img_bytes.getvalue())
 
         except Exception as e:
             logger.warning(f"Error aplicando blur: {e}, usando caja negra")
