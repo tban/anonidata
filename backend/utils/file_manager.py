@@ -66,7 +66,7 @@ class FileManager:
 
     def clean_metadata(self, file_path: Path) -> None:
         """
-        Limpia metadatos sensibles del PDF
+        Limpia todos los metadatos sensibles del PDF y los reemplaza con "AnoniData"
 
         Args:
             file_path: Ruta al PDF
@@ -76,29 +76,48 @@ class FileManager:
             return
 
         try:
-            with pikepdf.open(file_path, allow_overwriting_input=True) as pdf:
-                # Limpiar metadata XMP
-                with pdf.open_metadata(set_pikepdf_as_editor=False) as meta:
-                    meta.clear()
-                    meta['dc:title'] = 'Documento Anonimizado'
-                    meta['dc:creator'] = 'AnoniData'
-                    meta['pdf:Producer'] = 'AnoniData'
+            # Abrir el PDF con permiso para sobrescribir
+            pdf = pikepdf.open(file_path, allow_overwriting_input=True)
 
-                # Limpiar metadata del documento
-                if pdf.docinfo:
-                    pdf.docinfo = pikepdf.Dictionary({
-                        pikepdf.Name.Title: 'Documento Anonimizado',
-                        pikepdf.Name.Author: 'AnoniData',
-                        pikepdf.Name.Producer: 'AnoniData',
-                        pikepdf.Name.Creator: 'AnoniData',
-                    })
+            # Limpiar completamente metadata XMP
+            with pdf.open_metadata(set_pikepdf_as_editor=False) as meta:
+                meta.clear()
+                # Establecer todos los campos con AnoniData
+                meta['dc:title'] = 'AnoniData'
+                meta['dc:creator'] = ['AnoniData']
+                meta['dc:subject'] = 'AnoniData'
+                meta['dc:description'] = 'AnoniData'
+                meta['pdf:Producer'] = 'AnoniData'
+                meta['pdf:Keywords'] = 'AnoniData'
+                meta['xmp:CreatorTool'] = 'AnoniData'
 
-                pdf.save()
+            # Limpiar completamente metadata del documento (Document Info Dictionary)
+            # Modificar en lugar de reemplazar para evitar errores con pikepdf
+            if not hasattr(pdf, 'docinfo') or pdf.docinfo is None:
+                pdf.docinfo = pikepdf.Dictionary()
 
-            logger.debug(f"Metadatos limpiados: {file_path.name}")
+            # Establecer cada campo individualmente
+            pdf.docinfo[pikepdf.Name.Title] = 'AnoniData'
+            pdf.docinfo[pikepdf.Name.Author] = 'AnoniData'
+            pdf.docinfo[pikepdf.Name.Subject] = 'AnoniData'
+            pdf.docinfo[pikepdf.Name.Keywords] = 'AnoniData'
+            pdf.docinfo[pikepdf.Name.Producer] = 'AnoniData'
+            pdf.docinfo[pikepdf.Name.Creator] = 'AnoniData'
+
+            # Eliminar fechas de creación y modificación del docinfo
+            if pikepdf.Name.CreationDate in pdf.docinfo:
+                del pdf.docinfo[pikepdf.Name.CreationDate]
+            if pikepdf.Name.ModDate in pdf.docinfo:
+                del pdf.docinfo[pikepdf.Name.ModDate]
+
+            # Guardar los cambios sobrescribiendo el archivo original
+            pdf.save(file_path)
+            pdf.close()
+
+            logger.debug(f"Metadatos limpiados y reemplazados con AnoniData: {file_path.name}")
 
         except Exception as e:
-            logger.error(f"Error limpiando metadatos: {e}")
+            logger.error(f"Error limpiando metadatos: {e}", exc_info=True)
 
     def cleanup_temp(self) -> None:
         """Limpia archivos temporales"""

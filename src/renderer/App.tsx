@@ -23,6 +23,7 @@ function App() {
     totalFiles: number;
     processingTime: string;
     errors?: Array<{ file: string; error: string }>;
+    warnings?: Array<{ file: string; warnings: string[] }>;
     message?: string;
   } | null>(null);
 
@@ -139,6 +140,14 @@ function App() {
       const errorCount = result.results.filter((r) => r.status === 'error').length;
       const totalFiles = result.results.length;
 
+      // Extraer warnings de archivos exitosos
+      const fileWarnings = result.results
+        .filter((r) => r.status === 'success' && r.warnings && r.warnings.length > 0)
+        .map((r) => ({
+          file: r.inputFile.split('/').pop() || r.inputFile,
+          warnings: r.warnings
+        }));
+
       // Preparar datos para el modal según el resultado
       if (successCount > 0 && errorCount === 0) {
         // Todos los archivos procesados correctamente
@@ -148,6 +157,7 @@ function App() {
           errorCount,
           totalFiles,
           processingTime: processingTimeSeconds,
+          warnings: fileWarnings.length > 0 ? fileWarnings : undefined,
         });
       } else if (successCount > 0 && errorCount > 0) {
         // Algunos archivos fallaron
@@ -165,6 +175,7 @@ function App() {
           totalFiles,
           processingTime: processingTimeSeconds,
           errors,
+          warnings: fileWarnings.length > 0 ? fileWarnings : undefined,
         });
       } else {
         // Todos los archivos fallaron
@@ -497,6 +508,27 @@ function App() {
                   <p className="text-blue-800 leading-relaxed mt-2">
                     Es fundamental verificar que toda la información sensible haya sido correctamente anonimizada.
                   </p>
+                </div>
+              )}
+
+              {/* Lista de Advertencias */}
+              {completionData.warnings && completionData.warnings.length > 0 && (
+                <div className="bg-orange-50 border-l-4 border-orange-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold text-orange-900 mb-4">
+                    ⚠️ Advertencias ({completionData.warnings.length})
+                  </h3>
+                  <div className="space-y-3 max-h-60 overflow-y-auto">
+                    {completionData.warnings.map((warn, idx) => (
+                      <div key={idx} className="bg-white p-4 rounded-lg shadow-sm">
+                        <div className="font-medium text-orange-900 mb-2">{warn.file}</div>
+                        <div className="space-y-1">
+                          {warn.warnings.map((warning, widx) => (
+                            <div key={widx} className="text-sm text-orange-700">• {warning}</div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

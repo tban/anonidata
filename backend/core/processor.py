@@ -74,17 +74,33 @@ class PDFProcessor:
             # Calcular estadísticas
             stats = self._calculate_stats(pii_matches)
 
+            # Detectar si el PDF es principalmente imágenes escaneadas
+            warnings = []
+            if len(ocr_data.pages_processed) > 0:
+                ocr_percentage = (len(ocr_data.pages_processed) / pdf_data.page_count) * 100
+                if ocr_percentage >= 80:
+                    warnings.append(
+                        f"Este PDF contiene principalmente imágenes escaneadas ({int(ocr_percentage)}% de páginas). "
+                        "La detección de PII puede tener limitaciones. Se recomienda revisión manual exhaustiva."
+                    )
+                    logger.warning(f"PDF con {int(ocr_percentage)}% de páginas escaneadas: {input_path.name}")
+
             processing_time = time.time() - start_time
 
             logger.info(f"Completado: {input_path.name} ({processing_time:.2f}s)")
 
-            return {
+            result = {
                 "inputFile": str(input_path),
                 "outputFile": str(output_path),
                 "status": "success",
                 "stats": stats,
                 "processingTime": processing_time,
             }
+
+            if warnings:
+                result["warnings"] = warnings
+
+            return result
 
         except Exception as e:
             logger.error(f"Error procesando {input_path.name}: {e}", exc_info=True)
@@ -115,16 +131,16 @@ class PDFProcessor:
         for match in pii_matches:
             pii_type = match.type.upper()
 
-            # DNI/NIE
-            if pii_type in ["DNI", "NIE", "DNI_NIE"]:
+            # DNI/NIE (incluye reglas basadas en configuración)
+            if pii_type in ["DNI", "NIE", "DNI_NIE", "DNI_NIE_CON_ETIQUETA", "DNI_NIE_SIN_ETIQUETA"]:
                 stats["dniCount"] += 1
-            # Nombres y apellidos
-            elif pii_type in ["PERSON", "NOMBRES_APELLIDOS"]:
+            # Nombres y apellidos (incluye reglas basadas en configuración)
+            elif pii_type in ["PERSON", "NOMBRES_APELLIDOS", "NOMBRES_CON_PREFIJO"]:
                 stats["nameCount"] += 1
-            # Direcciones y domicilios
-            elif pii_type in ["ADDRESS", "DOMICILIOS"]:
+            # Direcciones y domicilios (incluye reglas basadas en configuración)
+            elif pii_type in ["ADDRESS", "DOMICILIOS", "DOMICILIO_CON_ETIQUETA"]:
                 stats["addressCount"] += 1
-            # Teléfonos
+            # Teléfonos (incluye reglas basadas en configuración)
             elif pii_type in ["PHONE", "TELEFONOS"]:
                 stats["phoneCount"] += 1
             # Emails

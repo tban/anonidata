@@ -9,9 +9,9 @@
       "redact_groups": [2],
       "preserve_groups": [1],
       "replacement": "X",
-      "enabled": true,
+      "enabled": false,
       "case_sensitive": true,
-      "description": "Detecta DNI:/NIE: y preserva la etiqueta, redacta el número"
+      "description": "Detecta DNI:/NIE: y preserva la etiqueta, redacta el número (DESACTIVADO - se usa detección con IA)"
     },
     {
       "id": "dni_nie_sin_etiqueta",
@@ -20,9 +20,9 @@
       "redact_groups": [0],
       "preserve_groups": [],
       "replacement": "X",
-      "enabled": true,
+      "enabled": false,
       "case_sensitive": true,
-      "description": "Detecta DNI/NIE sin etiqueta previa"
+      "description": "Detecta DNI/NIE sin etiqueta previa (DESACTIVADO - se usa detección con IA)"
     },
     {
       "id": "nombres_con_prefijo",
@@ -42,9 +42,9 @@
       "redact_groups": [0],
       "preserve_groups": [],
       "replacement": "X",
-      "enabled": true,
+      "enabled": false,
       "case_sensitive": true,
-      "description": "Detecta 2 o más palabras capitalizadas consecutivas"
+      "description": "Detecta 2 o más palabras capitalizadas consecutivas (DESACTIVADO - se usa NER con IA)"
     },
     {
       "id": "telefonos",
@@ -75,9 +75,9 @@
       "redact_groups": [2, 3],
       "preserve_groups": [1],
       "replacement": "X",
-      "enabled": true,
+      "enabled": false,
       "case_sensitive": false,
-      "description": "Detecta Domicilio: y preserva la etiqueta, redacta dirección y número"
+      "description": "Detecta Domicilio: y preserva la etiqueta, redacta dirección y número (DESACTIVADO - se usa detección con IA)"
     }
   ],
   "settings": {

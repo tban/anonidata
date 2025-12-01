@@ -77,7 +77,7 @@ class PIIDetector:
         """
         matches = []
 
-        # 1. NUEVO: Detección basada en reglas configurables (con bboxes precisas)
+        # 1. Detección basada en reglas configurables (con bboxes precisas)
         if self.pdf_path:
             logger.debug("Detectando PII con reglas configurables...")
             rule_matches = self.rule_based_detector.detect_in_text_blocks(
@@ -94,10 +94,19 @@ class PIIDetector:
             )
             matches.extend(rule_ocr_matches)
 
-        # 2. Detección NER (nombres, direcciones) - solo si está habilitada
+        # 2. Detección con regex tradicional (DNI, NIE, teléfonos, emails, etc.)
+        logger.debug("Detectando PII con regex...")
+        regex_matches = self._detect_with_regex(pdf_data.text_blocks)
+        matches.extend(regex_matches)
+
+        # También en OCR
+        ocr_text_blocks = self._convert_ocr_to_text_blocks(ocr_data.results)
+        regex_ocr_matches = self._detect_with_regex(ocr_text_blocks)
+        matches.extend(regex_ocr_matches)
+
+        # 3. Detección NER (nombres, direcciones) - solo si está habilitada
         if self.nlp:
-            logger.debug("Detectando PII con NER...")
-            ocr_text_blocks = self._convert_ocr_to_text_blocks(ocr_data.results)
+            logger.debug("Detectando PII con NER (IA)...")
             ner_matches = self._detect_with_ner(pdf_data.text_blocks)
             matches.extend(ner_matches)
 
@@ -105,7 +114,7 @@ class PIIDetector:
             ner_ocr_matches = self._detect_with_ner(ocr_text_blocks)
             matches.extend(ner_ocr_matches)
 
-        # 3. Detección visual (firmas, QR codes)
+        # 4. Detección visual (firmas, QR codes)
         logger.debug("Detectando PII visual...")
         visual_matches = self.visual_detector.detect(pdf_data)
         matches.extend(visual_matches)
