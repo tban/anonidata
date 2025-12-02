@@ -139,7 +139,7 @@ class RuleBasedDetector:
         for regex_match in rule.compiled_pattern.finditer(text):
             # Para cada grupo que debemos redactar
             for group_idx in rule.redact_groups:
-                if group_idx <= regex_match.lastindex:
+                if regex_match.lastindex is not None and group_idx <= regex_match.lastindex:
                     matched_text = regex_match.group(group_idx)
                     start_pos = regex_match.start(group_idx)
                     end_pos = regex_match.end(group_idx)
