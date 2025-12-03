@@ -71,6 +71,10 @@ class Anonymizer:
                     page = doc[page_num]
                     self._anonymize_page(page, matches)
 
+            # Añadir pie de página a todas las páginas
+            for page in doc:
+                self._add_footer(page)
+
             # Guardar documento anonimizado
             doc.save(
                 str(output_path),
@@ -97,6 +101,49 @@ class Anonymizer:
             grouped[page_num].append(match)
 
         return grouped
+
+    def _add_footer(self, page: fitz.Page) -> None:
+        """
+        Añade pie de página "AnoniData (año)" en la esquina inferior derecha
+
+        Args:
+            page: Página de PyMuPDF
+        """
+        from datetime import datetime
+
+        # Obtener año actual
+        current_year = datetime.now().year
+        footer_text = f"AnoniData ({current_year})"
+
+        # Obtener dimensiones de la página
+        page_rect = page.rect
+
+        # Configurar posición: esquina inferior derecha con margen
+        margin = 20
+        font_size = 8
+
+        # Crear objeto de texto
+        text_writer = fitz.TextWriter(page_rect)
+
+        # Calcular posición del texto (alineado a la derecha)
+        font = fitz.Font("helv")  # Helvetica
+        text_width = font.text_length(footer_text, fontsize=font_size)
+
+        # Posición: margen desde la derecha, margen desde abajo
+        x = page_rect.width - text_width - margin
+        y = page_rect.height - margin
+
+        # Añadir texto
+        text_writer.append(
+            (x, y),
+            footer_text,
+            font=font,
+            fontsize=font_size,
+            color=(0.5, 0.5, 0.5)  # Gris medio
+        )
+
+        # Escribir en la página
+        text_writer.write_text(page)
 
     def _anonymize_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
         """
