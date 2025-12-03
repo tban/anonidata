@@ -106,9 +106,12 @@ class Anonymizer:
             page: Página de PyMuPDF
             matches: Matches a redactar
         """
+        logger.info(f"Anonimizando página {page.number}: {len(matches)} detecciones")
+
         # Marcar todas las regiones para redacción
-        for match in matches:
+        for i, match in enumerate(matches, 1):
             bbox = match.bbox
+            logger.debug(f"  [{i}/{len(matches)}] {match.type}: '{match.text}' | bbox: {bbox}")
 
             if self.settings.redaction_strategy == "black_box":
                 self._apply_black_box(page, bbox)
@@ -119,6 +122,7 @@ class Anonymizer:
 
         # Aplicar todas las redacciones de golpe (ELIMINA el contenido permanentemente)
         # Esto borra el texto subyacente y lo reemplaza con el relleno especificado
+        logger.info(f"Aplicando {len(matches)} redacciones a página {page.number}")
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE)
 
     def _apply_black_box(self, page: fitz.Page, bbox: tuple) -> None:

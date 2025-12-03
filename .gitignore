@@ -59,4 +59,20 @@ backend/*.spec
 *.spec
 
 # Compiled executables (too large for GitHub)
-resources/anonidata-backend
+resources/
+
+# Test PDFs (pueden contener datos personales reales)
+test/pdfs/*.pdf
+test/pdfs/*_anonimizado.pdf
+
+# Scripts de inspección y debug temporal
+inspect_*.py
+create_test_*.py
+debug_*.py
+verify_*.py
+test_full_*.py
+test_solicitud*.pdf
+test_recurso*.pdf
+
+# Pero PERMITIR test_pii_detection.py (es parte del sistema de tests)
+!test_pii_detection.py

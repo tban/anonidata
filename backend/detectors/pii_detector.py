@@ -46,22 +46,38 @@ class PIIDetector:
             return
 
         logger.info("Intentando cargar modelo spaCy para NER...")
-        try:
-            # Intentar cargar modelo español
-            self.nlp = spacy.load("es_core_news_lg")
-            logger.info("✓ Modelo spaCy cargado exitosamente: es_core_news_lg")
-        except OSError as e:
-            logger.warning(f"No se pudo cargar es_core_news_lg: {e}")
+
+        # Si estamos en PyInstaller, buscar modelo en la carpeta empaquetada
+        import sys
+        from pathlib import Path
+
+        model_names = ["es_core_news_lg", "es_core_news_sm"]
+
+        for model_name in model_names:
             try:
-                # Fallback a modelo pequeño
-                self.nlp = spacy.load("es_core_news_sm")
-                logger.info("✓ Modelo spaCy cargado exitosamente: es_core_news_sm")
-            except OSError as e2:
-                logger.error(
-                    f"Modelo spaCy no encontrado: {e2}. "
-                    "Ejecutar: python -m spacy download es_core_news_lg"
-                )
-                self.nlp = None
+                # Primero intentar carga normal
+                self.nlp = spacy.load(model_name)
+                logger.info(f"✓ Modelo spaCy cargado exitosamente: {model_name}")
+                return
+            except OSError:
+                # Si falla, intentar buscar en PyInstaller
+                try:
+                    base_path = Path(sys._MEIPASS)
+                    model_path = base_path / "spacy" / "data" / model_name
+                    if model_path.exists():
+                        logger.info(f"Intentando cargar modelo desde PyInstaller: {model_path}")
+                        self.nlp = spacy.load(str(model_path))
+                        logger.info(f"✓ Modelo spaCy cargado exitosamente desde PyInstaller: {model_name}")
+                        return
+                except (AttributeError, OSError) as e:
+                    logger.debug(f"No se pudo cargar {model_name} desde PyInstaller: {e}")
+                    continue
+
+        logger.error(
+            "Modelo spaCy no encontrado. "
+            "Ejecutar: python -m spacy download es_core_news_lg"
+        )
+        self.nlp = None
 
     def set_pdf_path(self, pdf_path: Any):
         """Establece la ruta del PDF para el detector basado en reglas"""
@@ -176,10 +192,10 @@ class PIIDetector:
         for block in text_blocks:
             text = block.text
 
-            # DNI con etiqueta "DNI:" - preservar etiqueta, redactar solo número
+            # DNI/NIF con etiqueta "DNI:", "NIF" - preservar etiqueta, redactar solo número
             if self.settings.detect_dni:
-                # Buscar patrón "DNI: 12345678X" o "DNI 12345678X"
-                dni_pattern = re.compile(r'(DNI:?\s*)(\d{8}[A-Za-z])\b', re.IGNORECASE)
+                # Buscar patrón "DNI: 12345678X", "NIF 12345678X", etc.
+                dni_pattern = re.compile(r'((?:DNI|NIF):?\s*)(\d{8}[A-Za-z])\b', re.IGNORECASE)
                 for match in dni_pattern.finditer(text):
                     # Solo redactar el número (grupo 2), no la etiqueta (grupo 1)
                     dni_number = match.group(2)
@@ -330,6 +346,13 @@ class PIIDetector:
             'beneficiaria', 'representante', 'apoderado', 'apoderada',
             # Abreviaturas de firma
             'fdo', 'fdo.', 'firmado', 'firma', 'atentamente', 'atte', 'atte.',
+            # Títulos y tratamientos
+            'don', 'd.', 'doña', 'dña', 'dña.', 'sr', 'sr.', 'sra', 'sra.',
+            # Términos legales/administrativos
+            'desestima', 'estima', 'aprueba', 'deniega', 'concede', 'válida', 'válido',
+            'anula', 'nula', 'nulo', 'resuelve', 'acuerda', 'declara',
+            # Términos organizativos
+            'general', 'dirección', 'servicio', 'área', 'departamento', 'sección',
         }
 
         # Palabras clave de direcciones (para filtrar false positives del NER)

@@ -5,6 +5,7 @@ Permite definir patrones de anonimización con control fino sobre qué partes re
 
 import re
 import json
+import sys
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass
@@ -18,6 +19,21 @@ except ImportError:
 
 from processors.pdf_parser import TextBlock
 from detectors.models import PIIMatch
+
+
+def get_resource_path(relative_path: str) -> Path:
+    """
+    Obtiene la ruta correcta para archivos de recursos,
+    tanto en desarrollo como cuando está empaquetado con PyInstaller
+    """
+    try:
+        # PyInstaller crea un directorio temporal y almacena la ruta en _MEIPASS
+        base_path = Path(sys._MEIPASS)
+    except AttributeError:
+        # Si no estamos en PyInstaller, usar la ruta normal
+        base_path = Path(__file__).parent.parent
+
+    return base_path / relative_path
 
 
 @dataclass
@@ -50,7 +66,7 @@ class RuleBasedDetector:
             rules_path: Ruta al archivo JSON de reglas. Si es None, usa el default.
         """
         if rules_path is None:
-            rules_path = Path(__file__).parent.parent / "config" / "anonymization_rules.json"
+            rules_path = get_resource_path("config/anonymization_rules.json")
 
         self.rules_path = rules_path
         self.rules: List[AnonymizationRule] = []
@@ -60,6 +76,9 @@ class RuleBasedDetector:
     def _load_rules(self):
         """Carga las reglas desde el archivo JSON"""
         try:
+            logger.info(f"Intentando cargar reglas desde: {self.rules_path}")
+            logger.info(f"Archivo existe: {self.rules_path.exists()}")
+
             with open(self.rules_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
 
@@ -79,11 +98,16 @@ class RuleBasedDetector:
                         description=rule_data.get('description', ''),
                     )
                     self.rules.append(rule)
+                    logger.debug(f"  - Regla cargada: {rule.id} ({rule.name})")
 
-            logger.info(f"Cargadas {len(self.rules)} reglas de anonimización")
+            logger.info(f"✓ Cargadas {len(self.rules)} reglas de anonimización")
+            for rule in self.rules:
+                logger.info(f"  - {rule.id}: {rule.name} (enabled={rule.enabled})")
 
         except Exception as e:
             logger.error(f"Error cargando reglas de {self.rules_path}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             raise
 
     def detect_in_text_blocks(self, text_blocks: List[TextBlock], pdf_path: Path) -> List[PIIMatch]:

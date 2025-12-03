@@ -78,7 +78,7 @@ function createWindow() {
 function startPythonBackend() {
   const pythonPath = isDev
     ? path.join(app.getAppPath(), 'backend/main.py')
-    : path.join((process as any).resourcesPath, 'anonidata-backend');
+    : path.join((process as any).resourcesPath, 'anonidata-backend/anonidata-backend');
 
   log.info(`Iniciando backend Python: ${pythonPath}`);
 
