@@ -8,6 +8,16 @@ export interface AnoniDataAPI {
   };
   process: {
     anonymize: (files: string[]) => Promise<ProcessResult>;
+    detectOnly: (filePath: string) => Promise<DetectOnlyResult>;
+    finalizeAnonymization: (
+      originalFile: string,
+      detectionsPath: string,
+      approvedIndices: number[]
+    ) => Promise<FinalizeResult>;
+  };
+  review: {
+    loadDetections: (detectionsPath: string) => Promise<LoadDetectionsResult>;
+    saveDetections: (detectionsPath: string, detections: any[]) => Promise<boolean>;
   };
   app: {
     getVersion: () => Promise<string>;
@@ -18,6 +28,7 @@ export interface AnoniDataAPI {
   };
   utils: {
     getFilePath: (file: File) => string;
+    openExternal: (url: string) => Promise<void>;
   };
 }
 
@@ -44,6 +55,28 @@ export interface FileResult {
   processingTime: number;
 }
 
+export interface DetectOnlyResult {
+  success: boolean;
+  preAnonymizedPath?: string;
+  detectionsPath?: string;
+  totalDetections?: number;
+  error?: string;
+}
+
+export interface FinalizeResult {
+  success: boolean;
+  anonymizedPath?: string;
+  totalApproved?: number;
+  totalRejected?: number;
+  error?: string;
+}
+
+export interface LoadDetectionsResult {
+  success: boolean;
+  detections?: any[];
+  error?: string;
+}
+
 // Exponer API segura al renderer
 const api: AnoniDataAPI = {
   dialog: {
@@ -52,6 +85,13 @@ const api: AnoniDataAPI = {
   },
   process: {
     anonymize: (files: string[]) => ipcRenderer.invoke('process:anonymize', files),
+    detectOnly: (filePath: string) => ipcRenderer.invoke('process:detectOnly', filePath),
+    finalizeAnonymization: (originalFile: string, detectionsPath: string, approvedIndices: number[]) =>
+      ipcRenderer.invoke('process:finalizeAnonymization', originalFile, detectionsPath, approvedIndices),
+  },
+  review: {
+    loadDetections: (detectionsPath: string) => ipcRenderer.invoke('review:loadDetections', detectionsPath),
+    saveDetections: (detectionsPath: string, detections: any[]) => ipcRenderer.invoke('review:saveDetections', detectionsPath, detections),
   },
   app: {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
@@ -62,6 +102,7 @@ const api: AnoniDataAPI = {
   },
   utils: {
     getFilePath: (file: File) => webUtils.getPathForFile(file),
+    openExternal: (url: string) => ipcRenderer.invoke('utils:openExternal', url),
   },
 };
 

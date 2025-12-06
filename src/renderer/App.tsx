@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { ProcessResult } from '../preload/preload';
+import { ReviewScreen } from './screens/ReviewScreen';
 
 interface FileItem {
   path: string;
@@ -10,12 +11,21 @@ interface FileItem {
   result?: any;
 }
 
+interface ReviewState {
+  originalFilePath: string;
+  preAnonymizedPath: string;
+  detectionsPath: string;
+}
+
 function App() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processResult, setProcessResult] = useState<ProcessResult | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
+  const [reviewState, setReviewState] = useState<ReviewState | null>(null);
+  const [isDetecting, setIsDetecting] = useState<number | null>(null);
   const [completionData, setCompletionData] = useState<{
     type: 'success' | 'partial' | 'error' | 'critical';
     successCount: number;
@@ -222,6 +232,77 @@ function App() {
     setProcessResult(null);
   };
 
+  const handleStartReview = async (fileIndex: number) => {
+    const file = files[fileIndex];
+    setIsDetecting(fileIndex);
+
+    try {
+      const result = await window.anonidata.process.detectOnly(file.path);
+
+      if (result.success && result.preAnonymizedPath && result.detectionsPath) {
+        setReviewState({
+          originalFilePath: file.path,
+          preAnonymizedPath: result.preAnonymizedPath,
+          detectionsPath: result.detectionsPath,
+        });
+      } else {
+        console.error('Error iniciando revisión:', result.error);
+        await window.anonidata.dialog.showInfo(
+          `Error al iniciar la revisión: ${result.error}`,
+          'Error'
+        );
+      }
+    } catch (error) {
+      console.error('Error iniciando revisión:', error);
+      await window.anonidata.dialog.showInfo(
+        `Error al iniciar la revisión: ${error}`,
+        'Error'
+      );
+    } finally {
+      setIsDetecting(null);
+    }
+  };
+
+  const handleFinishReview = async (approvedIndices: number[]) => {
+    if (!reviewState) return;
+
+    try {
+      const result = await window.anonidata.process.finalizeAnonymization(
+        reviewState.originalFilePath,
+        reviewState.detectionsPath,
+        approvedIndices
+      );
+
+      if (result.success) {
+        await window.anonidata.dialog.showInfo(
+          `Anonimización completada exitosamente.\n\n` +
+          `Detecciones aprobadas: ${result.totalApproved}\n` +
+          `Detecciones rechazadas: ${result.totalRejected}\n\n` +
+          `Archivo guardado en: ${result.anonymizedPath}`,
+          'Anonimización Completada'
+        );
+
+        // Cerrar vista de revisión
+        setReviewState(null);
+      } else {
+        await window.anonidata.dialog.showInfo(
+          `Error al finalizar la anonimización: ${result.error}`,
+          'Error'
+        );
+      }
+    } catch (error) {
+      console.error('Error finalizando anonimización:', error);
+      await window.anonidata.dialog.showInfo(
+        `Error al finalizar la anonimización: ${error}`,
+        'Error'
+      );
+    }
+  };
+
+  const handleCancelReview = () => {
+    setReviewState(null);
+  };
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -230,11 +311,44 @@ function App() {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
+  // Si estamos en modo revisión, mostrar ReviewScreen
+  if (reviewState) {
+    return (
+      <ReviewScreen
+        originalFilePath={reviewState.originalFilePath}
+        preAnonymizedPath={reviewState.preAnonymizedPath}
+        detectionsPath={reviewState.detectionsPath}
+        onFinish={handleFinishReview}
+        onCancel={handleCancelReview}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
-        <header className="text-center mb-8">
+        <header className="relative text-center mb-8">
+          <button
+            onClick={() => setShowAboutModal(true)}
+            className="absolute right-0 top-0 w-8 h-8 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
+            title="Acerca de AnoniData"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+              className="w-5 h-5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+              />
+            </svg>
+          </button>
           <h1 className="text-4xl font-bold text-gray-800 mb-2">AnoniData</h1>
           <p className="text-gray-600">Anonimización de PDFs conforme a RGPD</p>
         </header>
@@ -419,6 +533,18 @@ function App() {
                       </p>
                     </div>
                   )}
+
+                  {file.status === 'pending' && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => handleStartReview(idx)}
+                        disabled={isDetecting === idx}
+                        className="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {isDetecting === idx ? 'Detectando PII...' : 'Revisar y Anonimizar'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -452,6 +578,9 @@ function App() {
         <footer className="mt-12 text-center text-sm text-gray-500">
           <p>
             🔒 Procesamiento 100% local • Sin telemetría • Conforme a RGPD
+          </p>
+          <p className="mt-2 text-xs">
+            v{__APP_VERSION__}
           </p>
         </footer>
       </div>
@@ -578,6 +707,86 @@ function App() {
                 className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
               >
                 Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal About AnoniData */}
+      {showAboutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+            {/* Header */}
+            <div className="p-8 rounded-t-2xl bg-gradient-to-r from-blue-600 to-indigo-600">
+              <div className="text-white text-center">
+                <h2 className="text-3xl font-bold mb-2">AnoniData</h2>
+                <p className="text-blue-100">Anonimización de PDFs conforme a RGPD</p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-8">
+              <div className="space-y-6">
+                {/* Versión */}
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 mb-1">Versión</p>
+                  <p className="text-2xl font-bold text-gray-800">{__APP_VERSION__}</p>
+                </div>
+
+                {/* Fecha de compilación */}
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 mb-1">Fecha de compilación</p>
+                  <p className="text-lg text-gray-700">{__BUILD_DATE__}</p>
+                </div>
+
+                {/* Contacto */}
+                <div className="pt-6 border-t border-gray-200">
+                  <div className="text-center">
+                    <p className="text-sm text-gray-500 mb-3">Contacto</p>
+                    <button
+                      onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
+                      className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium transition-colors cursor-pointer"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                      </svg>
+                      @TbanR
+                    </button>
+                  </div>
+                </div>
+
+                {/* Características */}
+                <div className="pt-6 border-t border-gray-200">
+                  <div className="grid grid-cols-1 gap-3 text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Procesamiento 100% local</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Sin telemetría ni conexión a internet</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Conforme al Reglamento General de Protección de Datos (RGPD)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-500">✓</span>
+                      <span>Detección avanzada con IA (spaCy NER)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-8 pb-8">
+              <button
+                onClick={() => setShowAboutModal(false)}
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
+              >
+                Cerrar
               </button>
             </div>
           </div>

@@ -4,6 +4,7 @@ Aplica redacción mediante cajas negras, pixelación o difuminado
 """
 
 import io
+import json
 from pathlib import Path
 from typing import List, Dict, Any
 from loguru import logger
@@ -71,9 +72,9 @@ class Anonymizer:
                     page = doc[page_num]
                     self._anonymize_page(page, matches)
 
-            # Añadir pie de página a todas las páginas
+            # Añadir encabezado a todas las páginas
             for page in doc:
-                self._add_footer(page)
+                self._add_header(page)
 
             # Guardar documento anonimizado
             doc.save(
@@ -102,9 +103,9 @@ class Anonymizer:
 
         return grouped
 
-    def _add_footer(self, page: fitz.Page) -> None:
+    def _add_header(self, page: fitz.Page) -> None:
         """
-        Añade pie de página "AnoniData (año)" en la esquina inferior derecha
+        Añade encabezado "AnoniData (año)" en la esquina superior derecha
 
         Args:
             page: Página de PyMuPDF
@@ -113,37 +114,30 @@ class Anonymizer:
 
         # Obtener año actual
         current_year = datetime.now().year
-        footer_text = f"AnoniData ({current_year})"
+        header_text = f"AnoniData ({current_year})"
 
         # Obtener dimensiones de la página
         page_rect = page.rect
 
-        # Configurar posición: esquina inferior derecha con margen
+        # Configurar posición: esquina superior derecha con margen
         margin = 20
         font_size = 8
 
-        # Crear objeto de texto
-        text_writer = fitz.TextWriter(page_rect)
+        # Calcular ancho aproximado del texto (estimación: 6 pixeles por caracter)
+        text_width_approx = len(header_text) * (font_size * 0.6)
 
-        # Calcular posición del texto (alineado a la derecha)
-        font = fitz.Font("helv")  # Helvetica
-        text_width = font.text_length(footer_text, fontsize=font_size)
+        # Posición: margen desde la derecha, margen desde arriba
+        x = page_rect.width - text_width_approx - margin
+        y = margin + font_size  # Añadir font_size para que el texto no se corte
 
-        # Posición: margen desde la derecha, margen desde abajo
-        x = page_rect.width - text_width - margin
-        y = page_rect.height - margin
-
-        # Añadir texto
-        text_writer.append(
+        # Insertar texto directamente en la página
+        page.insert_text(
             (x, y),
-            footer_text,
-            font=font,
+            header_text,
             fontsize=font_size,
-            color=(0.5, 0.5, 0.5)  # Gris medio
+            fontname="helv",  # Helvetica
+            color=(0.5, 0.5, 0.5)  # Gris medio (RGB)
         )
-
-        # Escribir en la página
-        text_writer.write_text(page)
 
     def _anonymize_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
         """
@@ -270,3 +264,160 @@ class Anonymizer:
         except Exception as e:
             logger.warning(f"Error aplicando blur: {e}, usando caja negra")
             self._apply_black_box(page, bbox)
+
+    def create_pre_anonymized(
+        self,
+        input_path: Path,
+        pii_matches: List[PIIMatch],
+    ) -> tuple[Path, Path]:
+        """
+        Crea un PDF pre-anonimizado (copia del original SIN anotaciones visuales)
+        y guarda las detecciones en un archivo JSON.
+
+        Las anotaciones visuales se manejan en el frontend con overlays SVG interactivos.
+
+        Args:
+            input_path: Ruta al PDF original
+            pii_matches: Lista de PII detectados
+
+        Returns:
+            Tupla con (ruta_pdf_pre_anonimizado, ruta_json_detecciones)
+        """
+        logger.info(f"Creando PDF pre-anonimizado con {len(pii_matches)} detecciones")
+
+        # Generar rutas de salida
+        pre_anon_path = self.file_manager.generate_pre_anonymized_path(input_path)
+        detections_path = self.file_manager.generate_detections_path(input_path)
+
+        # Abrir documento
+        doc = fitz.open(input_path)
+
+        try:
+            # NO agregar anotaciones visuales al PDF
+            # El frontend se encarga de mostrar rectángulos interactivos con SVG overlay
+
+            # Simplemente guardar una copia del PDF original
+            doc.save(
+                str(pre_anon_path),
+                garbage=4,
+                deflate=True,
+                clean=True,
+            )
+
+            logger.info(f"PDF pre-anonimizado guardado (copia sin anotaciones): {pre_anon_path.name}")
+
+            # Guardar detecciones a JSON
+            self.save_detections(pii_matches, detections_path)
+
+            return pre_anon_path, detections_path
+
+        finally:
+            doc.close()
+
+    def apply_final_redactions(
+        self,
+        input_path: Path,
+        approved_detections: List[PIIMatch],
+    ) -> Path:
+        """
+        Aplica redacciones finales SOLO a las detecciones aprobadas,
+        eliminando permanentemente el texto subyacente
+
+        Args:
+            input_path: Ruta al PDF original
+            approved_detections: Lista de PII aprobados para anonimizar
+
+        Returns:
+            Ruta al PDF final anonimizado
+        """
+        logger.info(f"Aplicando redacciones finales a {len(approved_detections)} detecciones aprobadas")
+
+        # Generar ruta de salida
+        output_path = self.file_manager.generate_output_path(input_path)
+
+        # Abrir documento original (NO el pre-anonimizado)
+        doc = fitz.open(input_path)
+
+        try:
+            # Agrupar detecciones aprobadas por página
+            matches_by_page = self._group_by_page(approved_detections)
+
+            # Procesar cada página
+            for page_num, matches in matches_by_page.items():
+                if page_num < doc.page_count:
+                    page = doc[page_num]
+                    self._anonymize_page(page, matches)
+
+            # Añadir encabezado a todas las páginas
+            for page in doc:
+                self._add_header(page)
+
+            # Guardar documento final anonimizado
+            doc.save(
+                str(output_path),
+                garbage=4,
+                deflate=True,
+                clean=True,
+            )
+
+            logger.info(f"PDF final anonimizado guardado: {output_path.name}")
+
+            return output_path
+
+        finally:
+            doc.close()
+
+    def save_detections(self, pii_matches: List[PIIMatch], output_path: Path) -> None:
+        """
+        Serializa detecciones de PII a JSON
+
+        Args:
+            pii_matches: Lista de detecciones PII
+            output_path: Ruta del archivo JSON de salida
+        """
+        detections_data = []
+
+        for idx, match in enumerate(pii_matches):
+            detection = {
+                "index": idx,
+                "type": match.type,
+                "text": match.text,
+                "bbox": list(match.bbox),  # tuple -> list para JSON
+                "page_num": match.page_num,
+                "confidence": match.confidence,
+                "source": match.source,
+            }
+            detections_data.append(detection)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(detections_data, f, ensure_ascii=False, indent=2)
+
+        logger.debug(f"Detecciones guardadas en: {output_path.name}")
+
+    def load_detections(self, detections_path: Path) -> List[PIIMatch]:
+        """
+        Deserializa detecciones de PII desde JSON
+
+        Args:
+            detections_path: Ruta del archivo JSON con detecciones
+
+        Returns:
+            Lista de objetos PIIMatch
+        """
+        with open(detections_path, 'r', encoding='utf-8') as f:
+            detections_data = json.load(f)
+
+        pii_matches = []
+        for detection in detections_data:
+            match = PIIMatch(
+                type=detection["type"],
+                text=detection["text"],
+                bbox=tuple(detection["bbox"]),  # list -> tuple
+                page_num=detection["page_num"],
+                confidence=detection["confidence"],
+                source=detection["source"],
+            )
+            pii_matches.append(match)
+
+        logger.debug(f"Cargadas {len(pii_matches)} detecciones desde: {detections_path.name}")
+        return pii_matches

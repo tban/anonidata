@@ -131,6 +131,7 @@ class FileManager:
     def generate_output_path(self, input_path: Path) -> Path:
         """
         Genera la ruta del archivo de salida
+        SIEMPRE sobrescribe el archivo si ya existe
 
         Args:
             input_path: Ruta del archivo original
@@ -144,10 +145,63 @@ class FileManager:
 
         output_path = directory / f"{stem}_anonimizado{suffix}"
 
-        # Si ya existe, agregar número
-        counter = 1
-        while output_path.exists():
-            output_path = directory / f"{stem}_anonimizado_{counter}{suffix}"
-            counter += 1
+        # NO agregar número, siempre sobrescribir
+        return output_path
 
+    def generate_pre_anonymized_path(self, input_path: Path) -> Path:
+        """
+        Genera la ruta del archivo pre-anonimizado (con anotaciones sin aplicar)
+        SIEMPRE sobrescribe el archivo si ya existe
+
+        Args:
+            input_path: Ruta del archivo original
+
+        Returns:
+            Ruta del archivo pre-anonimizado
+        """
+        stem = input_path.stem
+        suffix = input_path.suffix
+        directory = input_path.parent
+
+        output_path = directory / f"{stem}_preAnonimizado{suffix}"
+
+        # NO agregar número, siempre sobrescribir
+        return output_path
+
+    def generate_detections_path(self, input_path: Path) -> Path:
+        """
+        Genera la ruta del archivo JSON con las detecciones de PII
+        SIEMPRE sobrescribe el archivo si ya existe
+
+        Args:
+            input_path: Ruta del archivo original
+
+        Returns:
+            Ruta del archivo de detecciones JSON
+        """
+        stem = input_path.stem
+        directory = input_path.parent
+
+        output_path = directory / f"{stem}_detections.json"
+
+        # NO agregar número, siempre sobrescribir
+        return output_path
+
+    def generate_review_state_path(self, input_path: Path) -> Path:
+        """
+        Genera la ruta del archivo JSON con el estado de revisión
+        SIEMPRE sobrescribe el archivo si ya existe
+
+        Args:
+            input_path: Ruta del archivo original
+
+        Returns:
+            Ruta del archivo de estado de revisión
+        """
+        stem = input_path.stem
+        directory = input_path.parent
+
+        output_path = directory / f"{stem}_review.json"
+
+        # NO agregar número, siempre sobrescribir
         return output_path

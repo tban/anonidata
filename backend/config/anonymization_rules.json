@@ -64,9 +64,9 @@
       "redact_groups": [2],
       "preserve_groups": [1],
       "replacement": "X",
-      "enabled": true,
+      "enabled": false,
       "case_sensitive": false,
-      "description": "Detecta Categoría: y preserva la etiqueta, redacta el valor"
+      "description": "Detecta Categoría: y preserva la etiqueta, redacta el valor (DESACTIVADO - las categorías profesionales no son PII)"
     },
     {
       "id": "domicilio_con_etiqueta",
@@ -87,12 +87,12 @@
       "preserve_groups": [1],
       "replacement": "X",
       "enabled": true,
-      "case_sensitive": false,
-      "description": "Detecta Fdo./Firmado: seguido de nombres (2-4 palabras), preserva la abreviatura de firma"
+      "case_sensitive": true,
+      "description": "Detecta Fdo./Firmado/Firma: seguido de nombres propios (2-4 palabras capitalizadas), preserva la abreviatura. Case-sensitive para evitar detectar artículos y preposiciones."
     }
   ],
   "settings": {
-    "redaction_color": [0, 0, 0],
+    "redaction_color": [0.8, 0.8, 0.8],
     "redaction_char": "X",
     "preserve_spacing": true,
     "match_length": true

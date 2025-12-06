@@ -78,7 +78,7 @@ function createWindow() {
 function startPythonBackend() {
   const pythonPath = isDev
     ? path.join(app.getAppPath(), 'backend/main.py')
-    : path.join((process as any).resourcesPath, 'anonidata-backend/anonidata-backend');
+    : path.join((process as any).resourcesPath, 'anonidata-backend');
 
   log.info(`Iniciando backend Python: ${pythonPath}`);
 
@@ -211,6 +211,165 @@ app.on('ready', () => {
     });
   });
 
+  ipcMain.handle('process:detectOnly', async (_event: any, filePath: string) => {
+    log.info(`Detectando PII en: ${filePath}`);
+
+    return new Promise((resolve, reject) => {
+      if (!pythonProcess || pythonProcess.exitCode !== null) {
+        pythonProcess = startPythonBackend();
+      }
+
+      const request = {
+        action: 'detect_only',
+        file: filePath,
+        settings: store.get('settings'),
+      };
+
+      if (pythonProcess.stdin) {
+        pythonProcess.stdin.write(JSON.stringify(request) + '\n');
+      }
+
+      let responseData = '';
+      let resolved = false;
+
+      const dataHandler = (data: Buffer) => {
+        if (resolved) return;
+
+        const chunk = data.toString();
+        // Filtrar solo líneas que parecen JSON
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.trim() && line.includes('{') && line.includes('"success"')) {
+            try {
+              const response = JSON.parse(line);
+              if (response.success !== undefined) {
+                resolved = true;
+                if (pythonProcess.stdout) {
+                  pythonProcess.stdout.removeListener('data', dataHandler);
+                }
+
+                if (response.success) {
+                  resolve(response);
+                } else {
+                  reject(new Error(response.error));
+                }
+                return;
+              }
+            } catch (e) {
+              // No es JSON válido, continuar
+            }
+          }
+        }
+      };
+
+      if (pythonProcess.stdout) {
+        pythonProcess.stdout.on('data', dataHandler);
+      }
+
+      setTimeout(() => {
+        if (!resolved && pythonProcess.stdout) {
+          pythonProcess.stdout.removeListener('data', dataHandler);
+          reject(new Error('Timeout detectando PII'));
+        }
+      }, 300000);
+    });
+  });
+
+  ipcMain.handle(
+    'process:finalizeAnonymization',
+    async (_event: any, originalFile: string, detectionsPath: string, approvedIndices: number[]) => {
+      log.info(`Finalizando anonimización para: ${originalFile}`);
+
+      return new Promise((resolve, reject) => {
+        if (!pythonProcess || pythonProcess.exitCode !== null) {
+          pythonProcess = startPythonBackend();
+        }
+
+        const request = {
+          action: 'finalize_anonymization',
+          originalFile: originalFile,
+          detectionsPath: detectionsPath,
+          approvedIndices: approvedIndices,
+          settings: store.get('settings'),
+        };
+
+        if (pythonProcess.stdin) {
+          pythonProcess.stdin.write(JSON.stringify(request) + '\n');
+        }
+
+        let responseData = '';
+        let resolved = false;
+
+        const dataHandler = (data: Buffer) => {
+          if (resolved) return;
+
+          const chunk = data.toString();
+          // Filtrar solo líneas que parecen JSON
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.trim() && line.includes('{') && line.includes('"success"')) {
+              try {
+                const response = JSON.parse(line);
+                if (response.success !== undefined) {
+                  resolved = true;
+                  if (pythonProcess.stdout) {
+                    pythonProcess.stdout.removeListener('data', dataHandler);
+                  }
+
+                  if (response.success) {
+                    resolve(response);
+                  } else {
+                    reject(new Error(response.error));
+                  }
+                  return;
+                }
+              } catch (e) {
+                // No es JSON válido, continuar
+              }
+            }
+          }
+        };
+
+        if (pythonProcess.stdout) {
+          pythonProcess.stdout.on('data', dataHandler);
+        }
+
+        setTimeout(() => {
+          if (!resolved && pythonProcess.stdout) {
+            pythonProcess.stdout.removeListener('data', dataHandler);
+            reject(new Error('Timeout finalizando anonimización'));
+          }
+        }, 300000);
+      });
+    }
+  );
+
+  ipcMain.handle('review:loadDetections', async (_event: any, detectionsPath: string) => {
+    try {
+      const fs = require('fs').promises;
+      const data = await fs.readFile(detectionsPath, 'utf-8');
+      const detections = JSON.parse(data);
+      return { success: true, detections };
+    } catch (error: any) {
+      log.error(`Error cargando detecciones: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('review:saveDetections', async (_event: any, detectionsPath: string, detections: any[]) => {
+    try {
+      const fs = require('fs').promises;
+      await fs.writeFile(detectionsPath, JSON.stringify(detections, null, 2), 'utf-8');
+      log.info(`Detecciones guardadas: ${detectionsPath} (${detections.length} detecciones)`);
+      return true;
+    } catch (error: any) {
+      log.error(`Error guardando detecciones: ${error.message}`);
+      return false;
+    }
+  });
+
   ipcMain.handle('app:getVersion', (_event: any) => {
     return app.getVersion();
   });
@@ -224,14 +383,23 @@ app.on('ready', () => {
     return true;
   });
 
+  ipcMain.handle('utils:openExternal', async (_event: any, url: string) => {
+    const { shell } = require('electron');
+    try {
+      await shell.openExternal(url);
+    } catch (error) {
+      log.error(`Error abriendo URL externa: ${url}`, error);
+      throw error;
+    }
+  });
+
   createWindow();
   startPythonBackend();
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Siempre cerrar la aplicación cuando se cierra la ventana
+  app.quit();
 });
 
 app.on('activate', () => {

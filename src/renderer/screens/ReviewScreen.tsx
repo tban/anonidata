@@ -1,0 +1,422 @@
+import React, { useState, useEffect } from 'react'
+import { PDFViewer } from '../components/PDFViewer'
+import { DetectionOverlay } from '../components/DetectionOverlay'
+import { SelectionOverlay } from '../components/SelectionOverlay'
+import { Detection } from '../types/detection'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
+
+interface ReviewScreenProps {
+  originalFilePath: string
+  preAnonymizedPath: string
+  detectionsPath: string
+  onFinish: (approvedIndices: number[]) => void
+  onCancel: () => void
+}
+
+export const ReviewScreen: React.FC<ReviewScreenProps> = ({
+  originalFilePath,
+  preAnonymizedPath,
+  detectionsPath,
+  onFinish,
+  onCancel
+}) => {
+  const [detections, setDetections] = useState<Detection[]>([])
+  const [approvedIndices, setApprovedIndices] = useState<Set<number>>(new Set())
+  const [rejectedIndices, setRejectedIndices] = useState<Set<number>>(new Set())
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [scale, setScale] = useState(1.5)
+  const [pdfPageHeight, setPdfPageHeight] = useState(0)
+  const [canvasWidth, setCanvasWidth] = useState(0)
+  const [canvasHeight, setCanvasHeight] = useState(0)
+  const [hoveredDetectionIndex, setHoveredDetectionIndex] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [overlayVersion, setOverlayVersion] = useState(0)
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+
+  // Enriquecer detecciones con estado usando useMemo
+  const enrichedDetections = React.useMemo(() => {
+    return detections.map(d => ({
+      ...d,
+      isApproved: approvedIndices.has(d.index),
+      isRejected: rejectedIndices.has(d.index)
+    }))
+  }, [detections, approvedIndices, rejectedIndices])
+
+  // Cargar detecciones
+  useEffect(() => {
+    const loadDetections = async () => {
+      try {
+        setLoading(true)
+        const result = await window.anonidata.review.loadDetections(detectionsPath)
+        if (result.success && result.detections) {
+          setDetections(result.detections)
+        } else {
+          console.error('Error cargando detecciones:', result.error)
+        }
+      } catch (error) {
+        console.error('Error cargando detecciones:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadDetections()
+  }, [detectionsPath])
+
+  const handlePageRendered = (pageInfo: {
+    width: number
+    height: number
+    pageNum: number
+    originalWidth: number
+    originalHeight: number
+  }) => {
+    setPdfPageHeight(pageInfo.originalHeight)
+    setCanvasWidth(pageInfo.width)
+    setCanvasHeight(pageInfo.height)
+    console.log('PDF Page dimensions:', {
+      original: { width: pageInfo.originalWidth, height: pageInfo.originalHeight },
+      scaled: { width: pageInfo.width, height: pageInfo.height },
+      scale: scale
+    })
+  }
+
+  const handleDocumentLoaded = (doc: PDFDocumentProxy) => {
+    setTotalPages(doc.numPages)
+  }
+
+  const handleAddManualDetection = async (bbox: [number, number, number, number]) => {
+    // Crear nueva detección manual
+    const newDetection: Detection = {
+      index: detections.length,
+      type: 'MANUAL',
+      text: 'Selección manual',
+      bbox: bbox,
+      page_num: currentPage - 1, // PyMuPDF usa base-0
+      confidence: 1.0,
+      source: 'manual',
+    }
+
+    // Agregar a la lista de detecciones
+    const updatedDetections = [...detections, newDetection]
+    setDetections(updatedDetections)
+
+    // Marcar como aprobada automáticamente
+    const newApproved = new Set(approvedIndices)
+    newApproved.add(newDetection.index)
+    setApprovedIndices(newApproved)
+
+    setOverlayVersion(v => v + 1)
+
+    // Guardar detecciones actualizadas en el archivo JSON
+    try {
+      await window.anonidata.review.saveDetections(detectionsPath, updatedDetections)
+      console.log('Nueva detección manual guardada:', newDetection)
+    } catch (error) {
+      console.error('Error guardando detección manual:', error)
+    }
+  }
+
+  const handleDetectionClick = (index: number) => {
+    console.log('Click en detección:', index)
+    console.log('Estado actual - Aprobada:', approvedIndices.has(index), 'Rechazada:', rejectedIndices.has(index))
+
+    // Toggle entre estados: pendiente -> aprobado -> rechazado -> pendiente
+    if (approvedIndices.has(index)) {
+      // De aprobado a rechazado
+      console.log('Cambiando de APROBADO a RECHAZADO')
+      const newApproved = new Set(approvedIndices)
+      newApproved.delete(index)
+      setApprovedIndices(newApproved)
+
+      const newRejected = new Set(rejectedIndices)
+      newRejected.add(index)
+      setRejectedIndices(newRejected)
+
+      setOverlayVersion(v => v + 1)
+    } else if (rejectedIndices.has(index)) {
+      // De rechazado a pendiente
+      console.log('Cambiando de RECHAZADO a PENDIENTE')
+      const newRejected = new Set(rejectedIndices)
+      newRejected.delete(index)
+      setRejectedIndices(newRejected)
+
+      setOverlayVersion(v => v + 1)
+    } else {
+      // De pendiente a aprobado
+      console.log('Cambiando de PENDIENTE a APROBADO')
+      const newApproved = new Set(approvedIndices)
+      newApproved.add(index)
+      setApprovedIndices(newApproved)
+
+      setOverlayVersion(v => v + 1)
+    }
+  }
+
+  const handleApproveAll = () => {
+    const allIndices = new Set(detections.map(d => d.index))
+    setApprovedIndices(allIndices)
+    setRejectedIndices(new Set())
+    setOverlayVersion(v => v + 1)
+  }
+
+  const handleRejectAll = () => {
+    const allIndices = new Set(detections.map(d => d.index))
+    setRejectedIndices(allIndices)
+    setApprovedIndices(new Set())
+    setOverlayVersion(v => v + 1)
+  }
+
+  const handleFinish = async () => {
+    const approved = Array.from(approvedIndices)
+    onFinish(approved)
+  }
+
+  const stats = {
+    total: detections.length,
+    approved: approvedIndices.size,
+    rejected: rejectedIndices.size,
+    pending: detections.length - approvedIndices.size - rejectedIndices.size
+  }
+
+  // Detecciones de la página actual
+  // NOTA: PyMuPDF usa índice base-0 (primera página = 0), PDF.js usa base-1 (primera página = 1)
+  const currentPageDetections = detections.filter(d => d.page_num === currentPage - 1)
+
+  // Debug: mostrar todas las detecciones
+  console.log('ReviewScreen - Total detecciones:', detections.length)
+  console.log('ReviewScreen - Detecciones página', currentPage, ':', currentPageDetections.length)
+  console.log('ReviewScreen - Tipos:', currentPageDetections.map(d => `${d.type} (${d.text.substring(0, 20)}...)`))
+
+  return (
+    <div className="flex h-screen bg-gray-100">
+      {/* Sidebar */}
+      <div className="w-80 bg-white shadow-lg flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b">
+          <h2 className="text-lg font-semibold mb-2">Revisión de Anonimización</h2>
+          <div className="text-sm text-gray-600">
+            <div className="truncate" title={originalFilePath}>
+              {originalFilePath.split('/').pop()}
+            </div>
+          </div>
+        </div>
+
+        {/* Estadísticas */}
+        <div className="p-4 bg-gray-50 border-b">
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="flex items-center justify-between p-2 bg-white rounded">
+              <span className="text-gray-600">Total:</span>
+              <span className="font-semibold">{stats.total}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 bg-red-50 rounded">
+              <span className="text-red-700">Anonimizar:</span>
+              <span className="font-semibold text-red-700">{stats.approved}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 bg-orange-50 rounded">
+              <span className="text-orange-700">Mantener:</span>
+              <span className="font-semibold text-orange-700">{stats.rejected}</span>
+            </div>
+            <div className="flex items-center justify-between p-2 bg-gray-100 rounded">
+              <span className="text-gray-600">Pendientes:</span>
+              <span className="font-semibold">{stats.pending}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Acciones rápidas */}
+        <div className="p-4 border-b flex gap-2">
+          <button
+            onClick={handleApproveAll}
+            className="flex-1 px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+          >
+            Anonimizar Todas
+          </button>
+          <button
+            onClick={handleRejectAll}
+            className="flex-1 px-3 py-2 bg-orange-600 text-white text-sm rounded hover:bg-orange-700"
+          >
+            Mantener Todas
+          </button>
+        </div>
+
+        {/* Lista de detecciones */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <h3 className="text-sm font-semibold mb-2">
+            Detecciones en página {currentPage}:
+          </h3>
+          <div className="space-y-2">
+            {currentPageDetections.length === 0 ? (
+              <div className="text-sm text-gray-500 text-center py-4">
+                No hay detecciones en esta página
+              </div>
+            ) : (
+              currentPageDetections.map((detection) => {
+                const isApproved = approvedIndices.has(detection.index)
+                const isRejected = rejectedIndices.has(detection.index)
+                const isHovered = hoveredDetectionIndex === detection.index
+
+                return (
+                  <div
+                    key={detection.index}
+                    className={`p-3 rounded border-2 cursor-pointer transition-all ${
+                      isHovered ? 'ring-2 ring-blue-400' : ''
+                    } ${
+                      isApproved
+                        ? 'bg-red-50 border-red-300'
+                        : isRejected
+                        ? 'bg-orange-50 border-orange-300'
+                        : 'bg-white border-gray-300 hover:border-gray-400'
+                    }`}
+                    onClick={() => handleDetectionClick(detection.index)}
+                  >
+                    <div className="flex items-start justify-between mb-1">
+                      <span className="text-xs font-semibold text-gray-700">
+                        {detection.type}
+                      </span>
+                      <span className="text-xs text-gray-500">#{detection.index}</span>
+                    </div>
+                    <div className="text-sm font-mono text-gray-800 truncate">
+                      {detection.text}
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-gray-500">
+                        Confianza: {(detection.confidence * 100).toFixed(0)}%
+                      </span>
+                      {isApproved && (
+                        <span className="text-xs font-semibold text-red-700">✗ Anonimizar</span>
+                      )}
+                      {isRejected && (
+                        <span className="text-xs font-semibold text-orange-700">Mantener</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Botones de acción */}
+        <div className="p-4 border-t bg-white space-y-2">
+          <button
+            onClick={handleFinish}
+            disabled={approvedIndices.size === 0}
+            className="w-full px-4 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold"
+          >
+            Finalizar ({approvedIndices.size} para anonimizar)
+          </button>
+          <button
+            onClick={onCancel}
+            className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+
+      {/* Viewer */}
+      <div className="flex-1 flex flex-col">
+        {/* Toolbar */}
+        <div className="bg-white shadow-sm p-4 flex items-center justify-between">
+          {/* Controles de página */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed"
+            >
+              ← Anterior
+            </button>
+            <span className="text-sm text-gray-700">
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed"
+            >
+              Siguiente →
+            </button>
+          </div>
+
+          {/* Modo de selección manual */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsSelectionMode(!isSelectionMode)}
+              className={`px-4 py-2 rounded transition-colors ${
+                isSelectionMode
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {isSelectionMode ? '✓ Modo Selección' : '+ Añadir Área'}
+            </button>
+          </div>
+
+          {/* Controles de zoom */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setScale(Math.max(0.5, scale - 0.25))}
+              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
+            >
+              -
+            </button>
+            <span className="text-sm text-gray-700 w-16 text-center">
+              {(scale * 100).toFixed(0)}%
+            </span>
+            <button
+              onClick={() => setScale(Math.min(3, scale + 0.25))}
+              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* PDF Viewer */}
+        <div className="flex-1 overflow-auto bg-gray-200 p-8">
+          {loading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-gray-600">Cargando detecciones...</div>
+            </div>
+          ) : (
+            <div className="relative inline-block">
+              <PDFViewer
+                pdfPath={preAnonymizedPath}
+                scale={scale}
+                pageNumber={currentPage}
+                onPageRendered={handlePageRendered}
+                onDocumentLoaded={handleDocumentLoaded}
+              />
+              {/* Overlay de selección manual (detrás de DetectionOverlay) */}
+              {isSelectionMode && (
+                <SelectionOverlay
+                  canvasWidth={canvasWidth}
+                  canvasHeight={canvasHeight}
+                  pdfPageHeight={pdfPageHeight}
+                  scale={scale}
+                  onAddManualDetection={handleAddManualDetection}
+                />
+              )}
+              {/* Overlay de detecciones (encima de SelectionOverlay) */}
+              <DetectionOverlay
+                key={`overlay-v${overlayVersion}-p${currentPage}`}
+                detections={enrichedDetections}
+                currentPage={currentPage}
+                pdfPageHeight={pdfPageHeight}
+                scale={scale}
+                canvasWidth={canvasWidth}
+                canvasHeight={canvasHeight}
+                approvedIndices={approvedIndices}
+                rejectedIndices={rejectedIndices}
+                onDetectionClick={handleDetectionClick}
+                onDetectionHover={setHoveredDetectionIndex}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

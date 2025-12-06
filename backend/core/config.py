@@ -31,7 +31,7 @@ class Settings(BaseModel):
     detect_qr_codes: bool = True
 
     # Anonimización
-    redaction_color: tuple[float, float, float] = (0.35, 0.35, 0.35)  # Gris oscuro
+    redaction_color: tuple[float, float, float] = (0.8, 0.8, 0.8)  # Gris claro
     pixelation_level: int = 16
     redaction_strategy: Literal["black_box", "pixelate", "blur"] = "black_box"
 

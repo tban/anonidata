@@ -9,11 +9,13 @@ from typing import List
 class RegexPatterns:
     """Patrones regex para PII español"""
 
-    # DNI español: 8 dígitos + letra
-    DNI_PATTERN = r'\b[0-9]{8}[A-Z]\b'
+    # DNI español: 8 dígitos + letra (con soporte para puntos y guión)
+    # Formatos: 12345678A, 12345678-A, 12.345.678A, 12.345.678-A
+    DNI_PATTERN = r'\b(?:\d{8}|\d{1,2}\.\d{3}\.\d{3})-?[A-Z]\b'
 
-    # NIE español: X/Y/Z + 7 dígitos + letra
-    NIE_PATTERN = r'\b[XYZ][0-9]{7}[A-Z]\b'
+    # NIE español: X/Y/Z + 7 dígitos + letra (con soporte para puntos y guión)
+    # Formatos: X1234567A, X1234567-A, X1.234.567A, X1.234.567-A
+    NIE_PATTERN = r'\b[XYZ](?:\d{7}|\d{1}\.\d{3}\.\d{3})-?[A-Z]\b'
 
     # Email
     EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
@@ -72,13 +74,16 @@ class RegexPatterns:
     @staticmethod
     def _validate_dni(dni: str) -> bool:
         """Valida el dígito de control del DNI"""
-        if len(dni) != 9:
+        # Normalizar: eliminar puntos y guiones
+        normalized = dni.replace('.', '').replace('-', '')
+
+        if len(normalized) != 9:
             return False
 
         letters = "TRWAGMYFPDXBNJZSQVHLCKE"
         try:
-            number = int(dni[:8])
-            letter = dni[8].upper()
+            number = int(normalized[:8])
+            letter = normalized[8].upper()
             expected_letter = letters[number % 23]
             return letter == expected_letter
         except (ValueError, IndexError):
@@ -87,11 +92,14 @@ class RegexPatterns:
     @staticmethod
     def _validate_nie(nie: str) -> bool:
         """Valida el dígito de control del NIE"""
-        if len(nie) != 9:
+        # Normalizar: eliminar puntos y guiones
+        normalized = nie.replace('.', '').replace('-', '')
+
+        if len(normalized) != 9:
             return False
 
         letters = "TRWAGMYFPDXBNJZSQVHLCKE"
-        first_char = nie[0].upper()
+        first_char = normalized[0].upper()
 
         # Convertir primera letra a número
         replacements = {'X': '0', 'Y': '1', 'Z': '2'}
@@ -99,9 +107,9 @@ class RegexPatterns:
             return False
 
         try:
-            number_str = replacements[first_char] + nie[1:8]
+            number_str = replacements[first_char] + normalized[1:8]
             number = int(number_str)
-            letter = nie[8].upper()
+            letter = normalized[8].upper()
             expected_letter = letters[number % 23]
             return letter == expected_letter
         except (ValueError, IndexError):
