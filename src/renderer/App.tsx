@@ -539,7 +539,7 @@ function App() {
                       <button
                         onClick={() => handleStartReview(idx)}
                         disabled={isDetecting === idx}
-                        className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
+                        className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                       >
                         {isDetecting === idx ? 'Detectando PII...' : 'Revisión manual'}
                       </button>
