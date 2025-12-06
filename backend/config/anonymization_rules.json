@@ -92,7 +92,7 @@
     }
   ],
   "settings": {
-    "redaction_color": [0.8, 0.8, 0.8],
+    "redaction_color": [0.2, 0.2, 0.2],
     "redaction_char": "X",
     "preserve_spacing": true,
     "match_length": true

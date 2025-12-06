@@ -279,6 +279,160 @@ git commit -m "fix: Descripción del cambio"
 git push
 ```
 
+## 🗜️ Optimización de Tamaño
+
+### Problema Actual
+La aplicación empaquetada ocupa **~1.0 GB**, principalmente debido a dependencias innecesarias incluidas en el bundle.
+
+### Desglose de Tamaños
+- **Backend Python (PyInstaller)**: ~240 MB
+- **Electron Framework**: ~255 MB
+- **app.asar (código Electron)**: ~516 MB
+
+### Optimizaciones Recomendadas
+
+#### 1. Limpiar Dependencias Python No Usadas
+**Archivos**: `backend/requirements.txt`
+
+Remover dependencias instaladas pero no importadas:
+- `torch` (373 MB) - NO usado en el código
+- `transformers` (55 MB) - NO usado
+- `scipy` (72 MB) - NO usado
+
+```bash
+# Editar requirements.txt para remover líneas:
+# torch
+# transformers
+# scipy (si no se usa)
+
+cd backend
+pip uninstall torch transformers scipy
+pip freeze > requirements.txt
+```
+
+**Impacto estimado**: 428 MB menos en venv, ~50-100 MB menos en binario final
+
+#### 2. Optimizar PyInstaller
+
+**Archivo**: `backend/anonidata-backend.spec` (auto-generado, editar tras primer build)
+
+```python
+# Cambiar en el spec file:
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='anonidata-backend',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=True,  # ← CAMBIAR de False a True
+    upx=False,   # Mantener False (UPX puede causar problemas en macOS)
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+# Añadir excludes para herramientas de desarrollo:
+a = Analysis(
+    ['main.py'],
+    # ... otros parámetros
+    excludes=['mypy', 'pytest', 'black', 'flake8', 'mypy_extensions',
+              'unittest', 'test', 'tests'],
+    # ...
+)
+```
+
+**Impacto estimado**: 15-25 MB menos
+
+#### 3. Verificar Modelo spaCy
+
+El modelo `es_core_news_sm` (~17 MB) es óptimo. Si por error se incluyó `es_core_news_lg` (~600 MB):
+
+```bash
+# Verificar modelo instalado
+cd backend
+venv/bin/python -m spacy info
+
+# Si muestra 'lg', desinstalar y usar 'sm':
+venv/bin/python -m spacy download es_core_news_sm
+pip uninstall es-core-news-lg
+```
+
+**Impacto**: Hasta 600 MB si se está usando modelo grande
+
+#### 4. Reducir Idiomas de Electron (Opcional)
+
+**Archivo**: `forge.config.js`
+
+```javascript
+packagerConfig: {
+  asar: true,
+  // Añadir:
+  ignore: [
+    /\.git/,
+    /node_modules\/.*\/test/,
+    /node_modules\/.*\/tests/,
+  ],
+  // Opcional: Solo incluir idiomas necesarios
+  afterCopy: [(buildPath, electronVersion, platform, arch, callback) => {
+    // Remover locales innecesarios excepto es, en
+    const localesPath = path.join(buildPath, 'locales');
+    const keepLocales = ['es.pak', 'es-419.pak', 'en-US.pak', 'en-GB.pak'];
+    // Implementar limpieza...
+    callback();
+  }],
+}
+```
+
+**Impacto estimado**: 2-5 MB
+
+### Checklist de Optimización
+
+- [ ] Auditar `requirements.txt` y remover dependencias no usadas
+- [ ] Verificar imports en código Python (buscar `torch`, `transformers`)
+- [ ] Editar `.spec` para añadir `strip=True` y `excludes`
+- [ ] Recompilar backend: `npm run build:backend`
+- [ ] Verificar modelo spaCy es `sm` no `lg`
+- [ ] Empaquetar y medir: `npm run make`
+- [ ] Comparar tamaño antes/después
+
+### Comandos de Verificación
+
+```bash
+# Ver tamaño de dependencias Python
+cd backend
+venv/bin/pip list --format=columns | sort -k2 -hr
+
+# Ver tamaño del backend compilado
+ls -lh dist/anonidata-backend
+
+# Ver tamaño de la app empaquetada
+du -sh out/anonidata-darwin-arm64/anonidata.app
+du -sh out/make/zip/darwin/arm64/*.zip
+```
+
+### Impacto Total Estimado
+
+| Escenario | Tamaño Actual | Tamaño Optimizado | Reducción |
+|-----------|---------------|-------------------|-----------|
+| Sin optimizar | 1.0 GB | - | - |
+| Optimizaciones rápidas | - | 980 MB | 2% |
+| + Modelo spaCy optimizado | - | 950 MB | 5% |
+| + Todas las optimizaciones | - | 875-945 MB | 5-12% |
+
+### Advertencias
+
+1. **NO remover**: `PyMuPDF`, `spaCy`, `OpenCV`, `Pillow` - son críticas
+2. **Probar siempre** la app empaquetada tras optimizar
+3. **Mantener backup** del `.spec` file original
+4. **Documentar** qué dependencias se removieron y por qué
+
 ## 📚 Recursos Útiles
 
 - **Electron Docs**: https://www.electronjs.org/docs
