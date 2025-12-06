@@ -541,7 +541,7 @@ function App() {
                         disabled={isDetecting === idx}
                         className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
                       >
-                        {isDetecting === idx ? 'Detectando PII...' : 'Revisión Semiautomática'}
+                        {isDetecting === idx ? 'Detectando PII...' : 'Revisión manual'}
                       </button>
                     </div>
                   )}
