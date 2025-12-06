@@ -26,14 +26,14 @@
     },
     {
       "id": "nombres_con_prefijo",
-      "name": "Nombres con D./Dña.",
-      "pattern": "(D\\./Dña\\.?|Don|Doña)\\s+([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+(?:\\s+[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+)+)\\b",
+      "name": "Nombres con D./Dña./D.ª",
+      "pattern": "(D\\.?[ªº]?|Dña\\.?|Doña|Don)\\s+([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+(?:\\s+[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+)+)\\b",
       "redact_groups": [2],
       "preserve_groups": [1],
       "replacement": "X",
       "enabled": true,
       "case_sensitive": true,
-      "description": "Detecta D./Dña. seguido de nombres, preserva el prefijo"
+      "description": "Detecta D./Dª/D.ª/Dña./Doña/Don seguido de nombres, preserva el prefijo"
     },
     {
       "id": "nombres_apellidos",

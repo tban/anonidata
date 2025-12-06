@@ -296,11 +296,32 @@ class PIIDetector:
             # Email
             if self.settings.detect_emails:
                 for match in self.regex_patterns.find_email(text):
+                    # Calcular bbox precisa solo para el email
+                    precise_bbox = block.bbox
+                    if doc_pdf:
+                        try:
+                            page = doc_pdf[block.page_num]
+                            text_instances = page.search_for(match)
+
+                            if text_instances:
+                                found = False
+                                for rect in text_instances:
+                                    if self._rect_inside_bbox(rect, block.bbox):
+                                        precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+                                        found = True
+                                        break
+
+                                if not found and text_instances:
+                                    rect = text_instances[0]
+                                    precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+                        except Exception as e:
+                            logger.warning(f"Error calculando bbox precisa para EMAIL: {e}")
+
                     matches.append(
                         PIIMatch(
                             type="EMAIL",
                             text=match,
-                            bbox=block.bbox,
+                            bbox=precise_bbox,
                             page_num=block.page_num,
                             confidence=1.0,
                             source="regex",
@@ -310,11 +331,32 @@ class PIIDetector:
             # Teléfono
             if self.settings.detect_phones:
                 for match in self.regex_patterns.find_phone(text):
+                    # Calcular bbox precisa solo para el teléfono
+                    precise_bbox = block.bbox
+                    if doc_pdf:
+                        try:
+                            page = doc_pdf[block.page_num]
+                            text_instances = page.search_for(match)
+
+                            if text_instances:
+                                found = False
+                                for rect in text_instances:
+                                    if self._rect_inside_bbox(rect, block.bbox):
+                                        precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+                                        found = True
+                                        break
+
+                                if not found and text_instances:
+                                    rect = text_instances[0]
+                                    precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+                        except Exception as e:
+                            logger.warning(f"Error calculando bbox precisa para PHONE: {e}")
+
                     matches.append(
                         PIIMatch(
                             type="PHONE",
                             text=match,
-                            bbox=block.bbox,
+                            bbox=precise_bbox,
                             page_num=block.page_num,
                             confidence=1.0,
                             source="regex",
@@ -324,11 +366,32 @@ class PIIDetector:
             # IBAN
             if self.settings.detect_iban:
                 for match in self.regex_patterns.find_iban(text):
+                    # Calcular bbox precisa solo para el IBAN
+                    precise_bbox = block.bbox
+                    if doc_pdf:
+                        try:
+                            page = doc_pdf[block.page_num]
+                            text_instances = page.search_for(match)
+
+                            if text_instances:
+                                found = False
+                                for rect in text_instances:
+                                    if self._rect_inside_bbox(rect, block.bbox):
+                                        precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+                                        found = True
+                                        break
+
+                                if not found and text_instances:
+                                    rect = text_instances[0]
+                                    precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+                        except Exception as e:
+                            logger.warning(f"Error calculando bbox precisa para IBAN: {e}")
+
                     matches.append(
                         PIIMatch(
                             type="IBAN",
                             text=match,
-                            bbox=block.bbox,
+                            bbox=precise_bbox,
                             page_num=block.page_num,
                             confidence=1.0,
                             source="regex",
