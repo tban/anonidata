@@ -89,8 +89,7 @@ jobs:
 
       - name: Crear forge.config para Windows
         run: |
-          # Crear configuración temporal para Windows
-          @"
+          $configContent = @'
           const { FusesPlugin } = require('@electron-forge/plugin-fuses');
           const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
@@ -124,7 +123,7 @@ jobs:
                 config: {
                   name: 'Anonidata',
                   authors: 'AnoniData',
-                  description: 'Aplicación de escritorio para anonimización de PDFs conforme a RGPD'
+                  description: 'Aplicación para anonimización de PDFs'
                 }
               },
               {
@@ -161,12 +160,22 @@ jobs:
               },
             ],
           };
-          "@ | Out-File -FilePath forge.config.windows.js -Encoding UTF8
+          '@
+
+          $configContent | Out-File -FilePath forge.config.windows.js -Encoding UTF8
+
+          Write-Host "========================================="
+          Write-Host "Contenido de forge.config.windows.js:"
+          Write-Host "========================================="
+          Get-Content forge.config.windows.js
+          Write-Host "========================================="
 
       - name: Empaquetar aplicación para Windows
         run: |
-          # Usar configuración de Windows con flag --config
-          npx electron-forge make --config=forge.config.windows.js
+          Write-Host "Iniciando empaquetado con Electron Forge..."
+          Write-Host "Platform: win32"
+          Write-Host "Arch: x64"
+          npx electron-forge make --arch=x64 --platform=win32 --config=forge.config.windows.js
 
       - name: Verificar artefactos generados
         run: |
