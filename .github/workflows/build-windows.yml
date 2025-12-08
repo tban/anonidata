@@ -9,6 +9,7 @@ on:
       - 'src/**'
       - 'backend/**'
       - 'package.json'
+      - 'forge.config.windows.js'
       - '.github/workflows/build-windows.yml'
 
 jobs:
