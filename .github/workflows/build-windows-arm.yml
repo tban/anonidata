@@ -10,6 +10,7 @@ on:
   #     - 'src/**'
   #     - 'backend/**'
   #     - 'package.json'
+  #     - 'forge.config.windows-arm.js'
   #     - '.github/workflows/build-windows-arm.yml'
 
 jobs:
@@ -88,87 +89,30 @@ jobs:
       - name: Compilar main process
         run: npm run build:main
 
-      - name: Crear forge.config para Windows ARM64
+      - name: Preparar configuración para Windows ARM64
         run: |
-          $configContent = @'
-          const { FusesPlugin } = require('@electron-forge/plugin-fuses');
-          const { FuseV1Options, FuseVersion } = require('@electron/fuses');
-
-          module.exports = {
-            packagerConfig: {
-              icon: './build/icon',
-              arch: 'arm64',
-              platform: 'win32',
-              asar: {
-                unpack: '*.node'
-              },
-              ignore: [
-                /^\/backend/,
-                /^\/test/,
-                /^\/out/,
-                /^\/build/,
-                /^\/release/,
-                /^\/resources/,
-                /\.pyc$/,
-                /\.spec$/
-              ],
-              extraResource: [
-                'dist/anonidata-backend.exe'
-              ],
-            },
-            rebuildConfig: {},
-            makers: [
-              {
-                name: '@electron-forge/maker-squirrel',
-                platforms: ['win32'],
-                config: {
-                  name: 'Anonidata',
-                  authors: 'AnoniData',
-                  description: 'Aplicación para anonimización de PDFs'
-                }
-              },
-              {
-                name: '@electron-forge/maker-zip',
-                platforms: ['win32']
-              }
-            ],
-            plugins: [
-              {
-                name: '@electron-forge/plugin-auto-unpack-natives',
-                config: {},
-              },
-              new FusesPlugin({
-                version: FuseVersion.V1,
-                [FuseV1Options.RunAsNode]: false,
-                [FuseV1Options.EnableCookieEncryption]: true,
-                [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
-                [FuseV1Options.EnableNodeCliInspectArguments]: false,
-                [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-                [FuseV1Options.OnlyLoadAppFromAsar]: true,
-              }),
-            ],
-            publishers: [
-              {
-                name: '@electron-forge/publisher-github',
-                config: {
-                  repository: {
-                    owner: 'tban',
-                    name: 'anonidata',
-                  },
-                  prerelease: false,
-                  draft: true,
-                },
-              },
-            ],
-          };
-          '@
-
-          $configContent | Out-File -FilePath forge.config.windows-arm.js -Encoding UTF8
-
           Write-Host "========================================="
-          Write-Host "Contenido de forge.config.windows-arm.js:"
+          Write-Host "Preparando configuración de Electron Forge para Windows ARM64"
           Write-Host "========================================="
-          Get-Content forge.config.windows-arm.js
+
+          # Verificar que existe forge.config.windows-arm.js
+          if (-not (Test-Path forge.config.windows-arm.js)) {
+            Write-Error "forge.config.windows-arm.js no encontrado!"
+            exit 1
+          }
+
+          # Backup de forge.config.js original (macOS)
+          if (Test-Path forge.config.js) {
+            Write-Host "Respaldando forge.config.js original (macOS)"
+            Copy-Item forge.config.js forge.config.mac.backup.js
+          }
+
+          # Copiar configuración de Windows ARM64 como forge.config.js
+          Write-Host "Copiando forge.config.windows-arm.js a forge.config.js"
+          Copy-Item forge.config.windows-arm.js forge.config.js
+
+          Write-Host "Contenido de forge.config.js (Windows ARM64):"
+          Get-Content forge.config.js
           Write-Host "========================================="
 
       - name: Empaquetar aplicación para Windows ARM64
@@ -176,7 +120,7 @@ jobs:
           Write-Host "Iniciando empaquetado con Electron Forge..."
           Write-Host "Platform: win32"
           Write-Host "Arch: arm64"
-          npx electron-forge make --arch=arm64 --platform=win32 --config=forge.config.windows-arm.js
+          npx electron-forge make --arch=arm64 --platform=win32
 
       - name: Verificar artefactos generados
         run: |

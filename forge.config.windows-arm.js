@@ -1,0 +1,60 @@
+const { FusesPlugin } = require('@electron-forge/plugin-fuses');
+const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+
+module.exports = {
+  packagerConfig: {
+    asar: true,
+    icon: './build/icon',
+    executableName: 'anonidata',
+    extraResource: [
+      'dist/anonidata-backend.exe'
+    ]
+  },
+  rebuildConfig: {},
+  makers: [
+    {
+      name: '@electron-forge/maker-squirrel',
+      // NO platforms property - Squirrel is Windows-only by default
+      config: {
+        name: 'anonidata',
+        authors: 'AnoniData',
+        exe: 'anonidata.exe',
+        setupExe: 'AnoniData-Setup-ARM64.exe',
+        setupIcon: './build/icon.ico',
+        noMsi: true
+      }
+    },
+    {
+      name: '@electron-forge/maker-zip',
+      platforms: ['win32']
+    }
+  ],
+  plugins: [
+    {
+      name: '@electron-forge/plugin-auto-unpack-natives',
+      config: {}
+    },
+    new FusesPlugin({
+      version: FuseVersion.V1,
+      [FuseV1Options.RunAsNode]: false,
+      [FuseV1Options.EnableCookieEncryption]: true,
+      [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+      [FuseV1Options.EnableNodeCliInspectArguments]: false,
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+      [FuseV1Options.OnlyLoadAppFromAsar]: true
+    })
+  ],
+  publishers: [
+    {
+      name: '@electron-forge/publisher-github',
+      config: {
+        repository: {
+          owner: 'tban',
+          name: 'anonidata',
+        },
+        prerelease: false,
+        draft: true,
+      },
+    },
+  ],
+};
