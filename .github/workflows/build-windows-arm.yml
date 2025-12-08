@@ -2,14 +2,15 @@ name: Build Windows ARM64
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'backend/**'
-      - 'package.json'
-      - '.github/workflows/build-windows-arm.yml'
+  # Deshabilitado temporalmente hasta solucionar x64
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'src/**'
+  #     - 'backend/**'
+  #     - 'package.json'
+  #     - '.github/workflows/build-windows-arm.yml'
 
 jobs:
   build:
