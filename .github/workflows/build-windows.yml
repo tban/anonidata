@@ -151,11 +151,8 @@ jobs:
 
       - name: Empaquetar aplicación para Windows
         run: |
-          # Usar configuración de Windows
-          $env:ELECTRON_FORGE_CONFIG = "forge.config.windows.js"
-          npm run make
-        env:
-          ELECTRON_FORGE_CONFIG: forge.config.windows.js
+          # Usar configuración de Windows con flag --config
+          npx electron-forge make --config=forge.config.windows.js
 
       - name: Verificar artefactos generados
         run: |
