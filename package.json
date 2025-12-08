@@ -1,5 +1,6 @@
 {
   "name": "anonidata",
+  "productName": "Anonidata",
   "version": "1.0.0",
   "description": "Aplicación de escritorio para anonimización de PDFs conforme a RGPD",
   "author": "AnoniData",
