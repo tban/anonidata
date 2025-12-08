@@ -2,6 +2,14 @@ name: Build Windows x64
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'backend/**'
+      - 'package.json'
+      - '.github/workflows/build-windows.yml'
 
 jobs:
   build:
@@ -11,5 +19,179 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: Probar comando simple
-        run: echo "Estoy compilando en una VM Windows x64"
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Crear entorno virtual Python
+        run: |
+          cd backend
+          python -m venv venv
+
+      - name: Instalar dependencias Python
+        run: |
+          cd backend
+          .\venv\Scripts\activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Descargar modelo spaCy
+        run: |
+          cd backend
+          .\venv\Scripts\activate
+          python -m spacy download es_core_news_sm
+
+      - name: Compilar backend con PyInstaller
+        run: |
+          cd backend
+          .\venv\Scripts\activate
+
+          # Crear spec file para Windows si no existe
+          if (Test-Path anonidata-backend.spec) {
+            # Usar spec existente
+            pyinstaller --clean anonidata-backend.spec
+          } else {
+            # Crear build básico
+            pyinstaller --onefile --console --name anonidata-backend --add-data "config;config" main.py
+          }
+
+          # Verificar que el ejecutable se creó
+          if (Test-Path dist\anonidata-backend.exe) {
+            Write-Host "Backend compilado correctamente: dist\anonidata-backend.exe"
+            Get-Item dist\anonidata-backend.exe | Select-Object Name, Length
+          } else {
+            Write-Error "Error: No se generó el ejecutable del backend"
+            exit 1
+          }
+
+      - name: Copiar backend a dist del proyecto
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item backend\dist\anonidata-backend.exe dist\anonidata-backend.exe
+          Write-Host "Backend copiado a dist/"
+
+      - name: Instalar dependencias Node.js
+        run: npm ci
+
+      - name: Compilar renderer
+        run: npm run build:renderer
+
+      - name: Compilar main process
+        run: npm run build:main
+
+      - name: Crear forge.config para Windows
+        run: |
+          # Crear configuración temporal para Windows
+          @"
+          const { FusesPlugin } = require('@electron-forge/plugin-fuses');
+          const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+
+          module.exports = {
+            packagerConfig: {
+              icon: './build/icon',
+              arch: 'x64',
+              platform: 'win32',
+              asar: {
+                unpack: '*.node'
+              },
+              ignore: [
+                /^\/backend/,
+                /^\/test/,
+                /^\/out/,
+                /^\/build/,
+                /^\/release/,
+                /^\/resources/,
+                /\.pyc$/,
+                /\.spec$/
+              ],
+              extraResource: [
+                'dist/anonidata-backend.exe'
+              ],
+            },
+            rebuildConfig: {},
+            makers: [
+              {
+                name: '@electron-forge/maker-squirrel',
+                config: {
+                  name: 'Anonidata',
+                  authors: 'AnoniData',
+                  description: 'Aplicación de escritorio para anonimización de PDFs conforme a RGPD'
+                }
+              },
+              {
+                name: '@electron-forge/maker-zip',
+                platforms: ['win32']
+              }
+            ],
+            plugins: [
+              {
+                name: '@electron-forge/plugin-auto-unpack-natives',
+                config: {},
+              },
+              new FusesPlugin({
+                version: FuseVersion.V1,
+                [FuseV1Options.RunAsNode]: false,
+                [FuseV1Options.EnableCookieEncryption]: true,
+                [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+                [FuseV1Options.EnableNodeCliInspectArguments]: false,
+                [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+                [FuseV1Options.OnlyLoadAppFromAsar]: true,
+              }),
+            ],
+          };
+          "@ | Out-File -FilePath forge.config.windows.js -Encoding UTF8
+
+      - name: Empaquetar aplicación para Windows
+        run: |
+          # Usar configuración de Windows
+          $env:ELECTRON_FORGE_CONFIG = "forge.config.windows.js"
+          npm run make
+        env:
+          ELECTRON_FORGE_CONFIG: forge.config.windows.js
+
+      - name: Verificar artefactos generados
+        run: |
+          Write-Host "Contenido de out/make:"
+          Get-ChildItem -Recurse out/make | Select-Object FullName, Length
+
+      - name: Subir instalador Squirrel
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anonidata-Windows-x64-Installer
+          path: out/make/squirrel.windows/x64/*.exe
+          if-no-files-found: warn
+
+      - name: Subir ZIP portable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Anonidata-Windows-x64-Portable
+          path: out/make/zip/win32/x64/*.zip
+          if-no-files-found: warn
+
+      - name: Resumen del build
+        run: |
+          Write-Host "========================================"
+          Write-Host "Build completado para Windows x64"
+          Write-Host "========================================"
+          Write-Host ""
+          Write-Host "Artefactos generados:"
+
+          if (Test-Path out/make/squirrel.windows/x64/*.exe) {
+            Get-Item out/make/squirrel.windows/x64/*.exe | ForEach-Object {
+              Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)"
+            }
+          }
+
+          if (Test-Path out/make/zip/win32/x64/*.zip) {
+            Get-Item out/make/zip/win32/x64/*.zip | ForEach-Object {
+              Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)"
+            }
+          }
