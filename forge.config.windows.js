@@ -3,35 +3,24 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
 module.exports = {
   packagerConfig: {
+    asar: true,
     icon: './build/icon',
-    arch: 'x64',
-    platform: 'win32',
-    asar: {
-      unpack: '*.node'
-    },
-    ignore: [
-      /^\/backend/,
-      /^\/test/,
-      /^\/out/,
-      /^\/build/,
-      /^\/release/,
-      /^\/resources/,
-      /\.pyc$/,
-      /\.spec$/
-    ],
+    executableName: 'anonidata',
     extraResource: [
       'dist/anonidata-backend.exe'
-    ],
+    ]
   },
   rebuildConfig: {},
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
-      platforms: ['win32'],
       config: {
-        name: 'Anonidata',
+        name: 'anonidata',
         authors: 'AnoniData',
-        description: 'Aplicación para anonimización de PDFs'
+        exe: 'anonidata.exe',
+        setupExe: 'AnoniData-Setup.exe',
+        setupIcon: './build/icon.ico',
+        noMsi: true
       }
     },
     {
@@ -42,7 +31,7 @@ module.exports = {
   plugins: [
     {
       name: '@electron-forge/plugin-auto-unpack-natives',
-      config: {},
+      config: {}
     },
     new FusesPlugin({
       version: FuseVersion.V1,
@@ -51,8 +40,8 @@ module.exports = {
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
       [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
-    }),
+      [FuseV1Options.OnlyLoadAppFromAsar]: true
+    })
   ],
   publishers: [
     {
