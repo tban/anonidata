@@ -1,5 +1,7 @@
 # AnoniData - Guía para Claude Code
 
+> **⚠️ IMPORTANTE**: SIEMPRE optimizar el tamaño del ejecutable sin perder funcionalidad. Revisar y eliminar dependencias innecesarias en cada build.
+
 ## 📋 Descripción del Proyecto
 
 AnoniData es una aplicación de escritorio para anonimización de documentos PDF, diseñada específicamente para detectar y redactar datos personales (PII) según normativa española y europea (RGPD).
@@ -8,8 +10,13 @@ AnoniData es una aplicación de escritorio para anonimización de documentos PDF
 - **Frontend**: React 18 + TypeScript + Vite + TailwindCSS
 - **Main Process**: Electron + TypeScript
 - **Backend**: Python 3.13 con PyMuPDF, spaCy, OpenCV, Pillow
-- **Empaquetado**: Electron Forge
+- **Empaquetado**: Electron Forge (arm64 optimizado)
 - **Control de versiones**: Git + GitHub
+
+**Distribución Optimizada:**
+- **DMG arm64**: 312 MB (reducido 55% desde 695 MB)
+- **Aplicación**: 511 MB (reducido 49% desde ~1 GB)
+- **Backend**: 92 MB (reducido 62% desde ~240 MB)
 
 ## 🏗️ Arquitectura del Proyecto
 
@@ -77,6 +84,7 @@ open out/anonidata-darwin-arm64/anonidata.app
 
 ### General
 - **NO usar emojis** en el código a menos que el usuario lo solicite explícitamente
+- **SIEMPRE optimizar el tamaño del ejecutable** sin perder funcionalidad
 - Mantener consistencia con el estilo existente
 - Usar nombres descriptivos en inglés para código, español para UI
 - Comentarios en español para facilitar colaboración
@@ -217,24 +225,30 @@ MANUAL: '#f59e0b'         // amber
 
 ## 📦 Distribución
 
-### macOS
+### macOS arm64 (Apple Silicon)
 ```bash
 npm run make
-# Resultado: out/make/zip/darwin/arm64/anonidata-darwin-arm64-1.0.0.zip
+
+# Resultados:
+# - DMG: out/make/anonidata-1.0.0-arm64.dmg (312 MB)
+# - ZIP: out/make/zip/darwin/arm64/anonidata-darwin-arm64-1.0.0.zip
 ```
 
 ### Recursos Necesarios
-- Backend compilado: `dist/anonidata-backend`
+- Backend compilado optimizado: `dist/anonidata-backend` (92 MB, arm64)
 - Configuración: `backend/config/anonymization_rules.json`
 - Modelo spaCy: `es_core_news_sm` (incluido en PyInstaller)
+- Icono personalizado: `build/icon.icns`
 
 ## 🎯 Checklist Antes de Commit/Push
 
+- [ ] Verificar optimización: Auditar dependencias innecesarias
 - [ ] Compilar renderer (`npm run build:renderer`)
 - [ ] Compilar main (`npm run build:main`)
-- [ ] Compilar backend si hay cambios en Python (`npm run build:backend`)
+- [ ] Compilar backend si hay cambios en Python (`venv/bin/pyinstaller --clean anonidata-backend.spec`)
 - [ ] Verificar que no hay errores TypeScript
 - [ ] Verificar que fecha de compilación se actualiza
+- [ ] Verificar tamaño del DMG (debe ser ~312 MB para arm64)
 - [ ] Tests pasan (si aplica)
 - [ ] Probar en aplicación empaquetada (`npm run make`)
 - [ ] Commit con mensaje descriptivo
@@ -258,11 +272,13 @@ git push
 ```bash
 # Editar backend/**/*.py
 cd backend
-venv/bin/pyinstaller --clean --onefile --console --name anonidata-backend --add-data 'config:config' main.py
+venv/bin/pyinstaller --clean anonidata-backend.spec  # Usar spec optimizado
+rm -rf ../dist/anonidata-backend
 cp dist/anonidata-backend ../dist/
+ls -lh dist/anonidata-backend  # Verificar tamaño (~92 MB)
 cd ..
 npm run make
-# Verificar detección funciona
+# Verificar detección funciona y tamaño del DMG
 git add backend/
 git commit -m "feat: Descripción del cambio"
 git push
@@ -281,157 +297,204 @@ git push
 
 ## 🗜️ Optimización de Tamaño
 
-### Problema Actual
-La aplicación empaquetada ocupa **~1.0 GB**, principalmente debido a dependencias innecesarias incluidas en el bundle.
+**PRINCIPIO FUNDAMENTAL**: SIEMPRE optimizar el tamaño del ejecutable sin perder funcionalidad. Cada build debe ser revisado para eliminar dependencias innecesarias.
 
-### Desglose de Tamaños
-- **Backend Python (PyInstaller)**: ~240 MB
-- **Electron Framework**: ~255 MB
-- **app.asar (código Electron)**: ~516 MB
+### Estado Actual (Optimizado)
+- **DMG arm64**: **312 MB**
+- **App empaquetada**: **511 MB**
+- **Backend Python**: **92 MB**
 
-### Optimizaciones Recomendadas
+### Optimizaciones Aplicadas
 
-#### 1. Limpiar Dependencias Python No Usadas
-**Archivos**: `backend/requirements.txt`
+#### 1. Dependencias Python Eliminadas ✅
 
-Remover dependencias instaladas pero no importadas:
-- `torch` (373 MB) - NO usado en el código
-- `transformers` (55 MB) - NO usado
-- `scipy` (72 MB) - NO usado
+**Archivo**: `backend/requirements.txt`
+
+Dependencias pesadas removidas:
+- `torch` (2.9.1) - **MUY PESADO** - NO usado en código
+- `transformers` (4.57.3) - **MUY PESADO** - NO usado
+- `torchvision` (0.24.1) - **MUY PESADO** - NO usado
+- `scipy` (1.16.3) - NO usado
+- `es_core_news_lg` (3.8.0) - Modelo grande reemplazado por `sm`
 
 ```bash
-# Editar requirements.txt para remover líneas:
-# torch
-# transformers
-# scipy (si no se usa)
-
 cd backend
-pip uninstall torch transformers scipy
-pip freeze > requirements.txt
+venv/bin/pip uninstall -y torch torchvision transformers scipy es-core-news-lg
+venv/bin/pip freeze > requirements.txt
 ```
 
-**Impacto estimado**: 428 MB menos en venv, ~50-100 MB menos en binario final
+**Impacto real**: -148 MB en backend (-62%)
 
-#### 2. Optimizar PyInstaller
+#### 2. PyInstaller Optimizado ✅
 
-**Archivo**: `backend/anonidata-backend.spec` (auto-generado, editar tras primer build)
+**Archivo**: `backend/anonidata-backend.spec`
 
 ```python
-# Cambiar en el spec file:
+a = Analysis(
+    ['main.py'],
+    pathex=[],
+    binaries=[],
+    datas=[('config', 'config')],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        'pytest', 'mypy', 'black', 'flake8', 'mypy_extensions',
+        'unittest', 'test', 'tests', '_pytest',
+        'coverage', 'pytest_cov',
+        'torch', 'transformers', 'scipy', 'torchvision',
+    ],
+    noarchive=False,
+    optimize=2,  # ← Bytecode optimizado
+)
+
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.zipfiles,
     a.datas,
     [],
     name='anonidata-backend',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,  # ← CAMBIAR de False a True
-    upx=False,   # Mantener False (UPX puede causar problemas en macOS)
+    strip=True,      # ← Símbolos debug removidos
+    upx=False,       # ← False en macOS (evita ENOTDIR)
     console=True,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
-
-# Añadir excludes para herramientas de desarrollo:
-a = Analysis(
-    ['main.py'],
-    # ... otros parámetros
-    excludes=['mypy', 'pytest', 'black', 'flake8', 'mypy_extensions',
-              'unittest', 'test', 'tests'],
-    # ...
+    target_arch='arm64',  # ← Solo arm64
 )
 ```
 
-**Impacto estimado**: 15-25 MB menos
-
-#### 3. Verificar Modelo spaCy
-
-El modelo `es_core_news_sm` (~17 MB) es óptimo. Si por error se incluyó `es_core_news_lg` (~600 MB):
-
-```bash
-# Verificar modelo instalado
-cd backend
-venv/bin/python -m spacy info
-
-# Si muestra 'lg', desinstalar y usar 'sm':
-venv/bin/python -m spacy download es_core_news_sm
-pip uninstall es-core-news-lg
-```
-
-**Impacto**: Hasta 600 MB si se está usando modelo grande
-
-#### 4. Reducir Idiomas de Electron (Opcional)
+#### 3. Electron Forge Optimizado ✅
 
 **Archivo**: `forge.config.js`
 
 ```javascript
-packagerConfig: {
-  asar: true,
-  // Añadir:
-  ignore: [
-    /\.git/,
-    /node_modules\/.*\/test/,
-    /node_modules\/.*\/tests/,
+module.exports = {
+  packagerConfig: {
+    icon: './build/icon',
+    arch: 'arm64',          // Solo arm64
+    platform: 'darwin',     // Solo macOS
+    asar: {
+      unpack: '*.node'
+    },
+    ignore: [
+      /^\/backend/,
+      /^\/test/,
+      /^\/out/,
+      /^\/build/,
+      /^\/release/,
+      /^\/resources/,
+      /\.pyc$/,
+      /\.spec$/
+    ],
+    extraResource: [
+      'backend/dist/anonidata-backend'
+    ],
+  },
+  makers: [
+    {
+      name: '@electron-forge/maker-dmg',  // DMG para macOS
+      platforms: ['darwin'],
+      config: {
+        format: 'ULFO',
+        icon: './build/icon.icns'
+      }
+    },
+    {
+      name: '@electron-forge/maker-zip',  // ZIP alternativo
+      platforms: ['darwin'],
+    },
+    // Removidos: squirrel, deb, rpm
   ],
-  // Opcional: Solo incluir idiomas necesarios
-  afterCopy: [(buildPath, electronVersion, platform, arch, callback) => {
-    // Remover locales innecesarios excepto es, en
-    const localesPath = path.join(buildPath, 'locales');
-    const keepLocales = ['es.pak', 'es-419.pak', 'en-US.pak', 'en-GB.pak'];
-    // Implementar limpieza...
-    callback();
-  }],
 }
 ```
 
-**Impacto estimado**: 2-5 MB
+### Workflow de Optimización
+
+```bash
+# 1. Auditar dependencias Python
+cd backend
+venv/bin/pip list --format=columns | sort -k2 -rh
+
+# 2. Verificar imports en código
+grep -r "^import\|^from" --include="*.py" | grep -E "(torch|transformers|scipy)"
+
+# 3. Desinstalar dependencias no usadas
+venv/bin/pip uninstall -y torch transformers scipy torchvision es-core-news-lg
+
+# 4. Actualizar requirements
+venv/bin/pip freeze > requirements.txt
+
+# 5. Editar anonidata-backend.spec (añadir excludes, optimize=2, strip=True)
+
+# 6. Recompilar backend
+venv/bin/pyinstaller --clean anonidata-backend.spec
+
+# 7. Copiar a dist del proyecto
+rm -rf ../dist/anonidata-backend
+cp dist/anonidata-backend ../dist/
+
+# 8. Verificar tamaño
+ls -lh dist/anonidata-backend
+
+# 9. Generar DMG optimizado
+cd ..
+npm run make
+
+# 10. Verificar tamaños finales
+ls -lh out/make/anonidata-*.dmg
+du -sh out/anonidata-darwin-arm64/anonidata.app
+```
 
 ### Checklist de Optimización
 
-- [ ] Auditar `requirements.txt` y remover dependencias no usadas
-- [ ] Verificar imports en código Python (buscar `torch`, `transformers`)
-- [ ] Editar `.spec` para añadir `strip=True` y `excludes`
-- [ ] Recompilar backend: `npm run build:backend`
-- [ ] Verificar modelo spaCy es `sm` no `lg`
-- [ ] Empaquetar y medir: `npm run make`
-- [ ] Comparar tamaño antes/después
+- [x] Auditar `requirements.txt` y remover dependencias no usadas
+- [x] Verificar imports en código Python
+- [x] Desinstalar `torch`, `transformers`, `scipy`, `torchvision`
+- [x] Remover `es_core_news_lg`, mantener solo `es_core_news_sm`
+- [x] Editar `.spec`: `strip=True`, `optimize=2`, `target_arch='arm64'`, `excludes`
+- [x] Configurar `forge.config.js`: solo arm64, solo macOS
+- [x] Recompilar backend optimizado
+- [x] Verificar funcionalidad completa
+- [x] Medir y documentar reducciones
 
 ### Comandos de Verificación
 
 ```bash
-# Ver tamaño de dependencias Python
+# Ver dependencias Python ordenadas por tamaño
 cd backend
-venv/bin/pip list --format=columns | sort -k2 -hr
+venv/bin/pip list --format=columns | sort -k2 -rh
+
+# Ver modelo spaCy instalado
+venv/bin/python -m spacy info
 
 # Ver tamaño del backend compilado
 ls -lh dist/anonidata-backend
+file dist/anonidata-backend  # Verificar arquitectura
 
 # Ver tamaño de la app empaquetada
 du -sh out/anonidata-darwin-arm64/anonidata.app
-du -sh out/make/zip/darwin/arm64/*.zip
+
+# Ver tamaño del DMG
+ls -lh out/make/anonidata-1.0.0-arm64.dmg
 ```
 
-### Impacto Total Estimado
+### Resultados de Optimización
 
-| Escenario | Tamaño Actual | Tamaño Optimizado | Reducción |
-|-----------|---------------|-------------------|-----------|
-| Sin optimizar | 1.0 GB | - | - |
-| Optimizaciones rápidas | - | 980 MB | 2% |
-| + Modelo spaCy optimizado | - | 950 MB | 5% |
-| + Todas las optimizaciones | - | 875-945 MB | 5-12% |
+| Componente | Antes | Después | Reducción |
+|------------|-------|---------|-----------|
+| **DMG arm64** | 695 MB | **312 MB** | **-383 MB (-55%)** |
+| **App empaquetada** | ~1.0 GB | **511 MB** | **-489 MB (-49%)** |
+| **Backend Python** | ~240 MB | **92 MB** | **-148 MB (-62%)** |
 
-### Advertencias
+### Advertencias Críticas
 
-1. **NO remover**: `PyMuPDF`, `spaCy`, `OpenCV`, `Pillow` - son críticas
-2. **Probar siempre** la app empaquetada tras optimizar
-3. **Mantener backup** del `.spec` file original
-4. **Documentar** qué dependencias se removieron y por qué
+1. **NO remover**: `PyMuPDF`, `spaCy`, `OpenCV`, `Pillow`, `numpy` - son críticas
+2. **Mantener**: `es_core_news_sm` - modelo óptimo para NER español
+3. **Probar siempre**: Ejecutar app empaquetada y verificar TODAS las funcionalidades
+4. **Arquitectura**: Solo arm64 para M1/M2/M3 (no universal2)
+5. **UPX**: Mantener en `False` en macOS (evita errores ENOTDIR)
 
 ## 📚 Recursos Útiles
 
@@ -443,13 +506,15 @@ du -sh out/make/zip/darwin/arm64/*.zip
 
 ## 🎓 Notas Finales
 
-1. **Siempre compilar antes de empaquetar**: Los cambios en código fuente no se reflejan en el `.app` hasta compilar
-2. **Backend es crítico**: Cualquier cambio en Python requiere recompilar con PyInstaller
-3. **Fecha de build es automática**: Se actualiza al compilar renderer con Vite
-4. **Usar git descriptivamente**: Commits claros facilitan debugging y rollbacks
-5. **Priorizar bboxes precisas**: Mejorar la experiencia de usuario en revisión manual
+1. **SIEMPRE optimizar el tamaño del ejecutable sin perder funcionalidad**: Cada build debe minimizar dependencias innecesarias
+2. **Siempre compilar antes de empaquetar**: Los cambios en código fuente no se reflejan en el `.app` hasta compilar
+3. **Backend es crítico**: Cualquier cambio en Python requiere recompilar con PyInstaller optimizado
+4. **Fecha de build es automática**: Se actualiza al compilar renderer con Vite
+5. **Usar git descriptivamente**: Commits claros facilitan debugging y rollbacks
+6. **Priorizar bboxes precisas**: Mejorar la experiencia de usuario en revisión manual
+7. **Solo arm64 para macOS**: Configurado para Apple Silicon (M1/M2/M3)
 
 ---
 
-**Última actualización**: Diciembre 2025
-**Versión del proyecto**: 1.0.0
+**Última actualización**: 8 Diciembre 2025
+**Versión del proyecto**: 1.0.0 (arm64 optimizado)
