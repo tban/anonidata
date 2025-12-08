@@ -3,6 +3,7 @@ const path = require('path');
 const log = require('electron-log');
 const Store = require('electron-store');
 const { spawn } = require('child_process');
+import { AppUpdater } from './updater';
 
 // Types
 type BrowserWindowType = any;
@@ -31,6 +32,7 @@ const store = new Store({
 
 let mainWindow: any = null;
 let pythonProcess: ChildProcessType = null;
+let appUpdater: AppUpdater | null = null;
 
 function createWindow() {
   const { width, height } = store.get('windowBounds') as { width: number; height: number };
@@ -393,8 +395,43 @@ app.on('ready', () => {
     }
   });
 
+  // IPC Handlers para actualización automática
+  ipcMain.handle('updater:checkForUpdates', async () => {
+    if (!appUpdater) return { available: false };
+    return await appUpdater.checkForUpdates();
+  });
+
+  ipcMain.handle('updater:downloadUpdate', async () => {
+    if (!appUpdater) return false;
+    return await appUpdater.downloadUpdate();
+  });
+
+  ipcMain.handle('updater:installUpdate', () => {
+    if (appUpdater) {
+      appUpdater.quitAndInstall();
+    }
+  });
+
+  ipcMain.handle('updater:openDownloadPage', () => {
+    if (appUpdater) {
+      appUpdater.openDownloadPage();
+    }
+  });
+
   createWindow();
   startPythonBackend();
+
+  // Inicializar sistema de actualizaciones
+  appUpdater = new AppUpdater(mainWindow, isDev);
+
+  // Verificar actualizaciones 5 segundos después del inicio (solo en producción)
+  if (!isDev) {
+    setTimeout(() => {
+      if (appUpdater) {
+        appUpdater.checkForUpdates();
+      }
+    }, 5000);
+  }
 });
 
 app.on('window-all-closed', () => {

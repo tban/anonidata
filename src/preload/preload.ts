@@ -30,6 +30,15 @@ export interface AnoniDataAPI {
     getFilePath: (file: File) => string;
     openExternal: (url: string) => Promise<void>;
   };
+  updater: {
+    checkForUpdates: () => Promise<UpdateInfo>;
+    downloadUpdate: () => Promise<boolean>;
+    installUpdate: () => Promise<void>;
+    openDownloadPage: () => Promise<void>;
+    onUpdateAvailable: (callback: (info: UpdateAvailableInfo) => void) => void;
+    onDownloadProgress: (callback: (progress: DownloadProgress) => void) => void;
+    onUpdateDownloaded: (callback: (info: UpdateDownloadedInfo) => void) => void;
+  };
 }
 
 export interface ProcessResult {
@@ -77,6 +86,28 @@ export interface LoadDetectionsResult {
   error?: string;
 }
 
+export interface UpdateInfo {
+  available: boolean;
+  version?: string;
+  downloadUrl?: string;
+  releaseNotes?: string;
+}
+
+export interface UpdateAvailableInfo {
+  version: string;
+  releaseNotes?: string;
+}
+
+export interface DownloadProgress {
+  percent: number;
+  transferred: number;
+  total: number;
+}
+
+export interface UpdateDownloadedInfo {
+  version: string;
+}
+
 // Exponer API segura al renderer
 const api: AnoniDataAPI = {
   dialog: {
@@ -103,6 +134,21 @@ const api: AnoniDataAPI = {
   utils: {
     getFilePath: (file: File) => webUtils.getPathForFile(file),
     openExternal: (url: string) => ipcRenderer.invoke('utils:openExternal', url),
+  },
+  updater: {
+    checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
+    downloadUpdate: () => ipcRenderer.invoke('updater:downloadUpdate'),
+    installUpdate: () => ipcRenderer.invoke('updater:installUpdate'),
+    openDownloadPage: () => ipcRenderer.invoke('updater:openDownloadPage'),
+    onUpdateAvailable: (callback: (info: UpdateAvailableInfo) => void) => {
+      ipcRenderer.on('updater:update-available', (_event: any, info: UpdateAvailableInfo) => callback(info));
+    },
+    onDownloadProgress: (callback: (progress: DownloadProgress) => void) => {
+      ipcRenderer.on('updater:download-progress', (_event: any, progress: DownloadProgress) => callback(progress));
+    },
+    onUpdateDownloaded: (callback: (info: UpdateDownloadedInfo) => void) => {
+      ipcRenderer.on('updater:update-downloaded', (_event: any, info: UpdateDownloadedInfo) => callback(info));
+    },
   },
 };
 

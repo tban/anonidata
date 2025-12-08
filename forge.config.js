@@ -55,4 +55,17 @@ module.exports = {
       [FuseV1Options.OnlyLoadAppFromAsar]: true,
     }),
   ],
+  publishers: [
+    {
+      name: '@electron-forge/publisher-github',
+      config: {
+        repository: {
+          owner: 'tban',
+          name: 'anonidata',
+        },
+        prerelease: false,
+        draft: true,
+      },
+    },
+  ],
 };

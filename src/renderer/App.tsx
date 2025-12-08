@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { ProcessResult } from '../preload/preload';
 import { ReviewScreen } from './screens/ReviewScreen';
+import { UpdateNotification } from './components/UpdateNotification';
 
 interface FileItem {
   path: string;
@@ -792,6 +793,9 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Componente de actualización automática */}
+      <UpdateNotification />
     </div>
   );
 }
