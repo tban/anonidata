@@ -42,7 +42,6 @@ function createWindow() {
     height,
     minWidth: 800,
     minHeight: 600,
-    icon: path.join(__dirname, '../../build/icon.icns'), // Icono para el Dock en macOS
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
