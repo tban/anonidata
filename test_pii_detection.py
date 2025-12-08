@@ -275,6 +275,10 @@ class PIITestValidator:
                         page = doc[page_num]
                         self.anonymizer._anonymize_page(page, matches)
 
+                # Añadir encabezado a todas las páginas
+                for page in doc:
+                    self.anonymizer._add_header(page)
+
                 # Guardar
                 doc.save(
                     str(output_path),
@@ -313,6 +317,11 @@ def main():
     print("="*80)
 
     all_passed = True
+    tested_files = []
+
+    # TESTS ESPECÍFICOS CON EXPECTATIVAS
+    print("\n📋 TESTS CON EXPECTATIVAS ESPECÍFICAS:")
+    print("-" * 80)
 
     # Test 1: Solicitud_Comision_Servicios.pdf
     # Expectativa: 2 nombres, 1 DNI, 1 dirección
@@ -324,6 +333,7 @@ def main():
             'address': True,
         })
         all_passed = all_passed and passed1
+        tested_files.append(pdf1.name)
     else:
         print(f"\n⚠️  No se encuentra: {pdf1.name}")
         all_passed = False
@@ -340,14 +350,67 @@ def main():
             'email': True,
         })
         all_passed = all_passed and passed2
+        tested_files.append(pdf2.name)
     else:
         print(f"\n⚠️  No se encuentra: {pdf2.name}")
         all_passed = False
+
+    # TESTS EXPLORATORIOS PARA NUEVOS DOCUMENTOS
+    print("\n\n📂 TESTS EXPLORATORIOS (documentos nuevos):")
+    print("-" * 80)
+
+    # Buscar todos los PDFs en la carpeta
+    all_pdfs = list(test_dir.glob("*.pdf"))
+
+    # Filtrar PDFs ya testeados y anonimizados
+    new_pdfs = [
+        pdf for pdf in all_pdfs
+        if pdf.name not in tested_files
+        and not pdf.name.endswith("_anonimizado.pdf")
+    ]
+
+    if new_pdfs:
+        for new_pdf in new_pdfs:
+            print(f"\n🔍 Analizando nuevo documento: {new_pdf.name}")
+            # Analizar sin expectativas específicas (modo exploración)
+            result = validator.analyze_document(new_pdf)
+            stats = result['stats']
+
+            print(f"\n📊 RESULTADOS DE DETECCIÓN:")
+            print(f"   Total de detecciones: {result['total']}")
+            print(f"   DNI/NIE: {stats['dni_count']}")
+            print(f"   Nombres (detecciones totales): {stats['name_detections']}")
+            print(f"   Nombres únicos: {stats['unique_names']}")
+            print(f"   Direcciones: {stats['address_count']}")
+            print(f"   Teléfonos: {stats['phone_count']}")
+            print(f"   Emails: {stats['email_count']}")
+
+            print(f"\n🔍 DETALLE POR TIPO:")
+            for pii_type, matches in sorted(result['by_type'].items()):
+                print(f"\n   {pii_type}: {len(matches)} detecciones")
+                for i, match in enumerate(matches, 1):
+                    print(f"      [{i}] '{match.text}' (página {match.page_num})")
+
+            # Generar PDF anonimizado
+            if result['total'] > 0:
+                print(f"\n🖋️  GENERANDO PDF ANONIMIZADO...")
+                output_path = validator._anonymize_document(new_pdf, result)
+                if output_path:
+                    print(f"   ✅ PDF anonimizado guardado en: {output_path.name}")
+                else:
+                    print(f"   ❌ Error generando PDF anonimizado")
+
+            print(f"\n✅ Análisis completado para: {new_pdf.name}")
+    else:
+        print("\n   No se encontraron documentos nuevos para probar.")
+        print(f"   Documentos ya testeados: {', '.join(tested_files)}")
 
     # Resultado final
     print(f"\n{'='*80}")
     if all_passed:
         print("✅ TODOS LOS TESTS PASARON")
+        if new_pdfs:
+            print(f"✅ Se analizaron {len(new_pdfs)} documento(s) nuevo(s) en modo exploración")
     else:
         print("❌ ALGUNOS TESTS FALLARON")
     print(f"{'='*80}\n")
