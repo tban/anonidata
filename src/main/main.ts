@@ -395,6 +395,18 @@ app.on('ready', () => {
     }
   });
 
+  ipcMain.handle('utils:deleteFile', async (_event: any, filePath: string) => {
+    const fs = require('fs').promises;
+    try {
+      await fs.unlink(filePath);
+      log.info(`Archivo eliminado: ${filePath}`);
+      return true;
+    } catch (error: any) {
+      log.error(`Error eliminando archivo ${filePath}:`, error.message);
+      return false;
+    }
+  });
+
   // IPC Handlers para actualización automática
   ipcMain.handle('updater:checkForUpdates', async () => {
     if (!appUpdater) return { available: false };

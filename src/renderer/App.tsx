@@ -300,7 +300,31 @@ function App() {
     }
   };
 
-  const handleCancelReview = () => {
+  const handleCancelReview = async () => {
+    if (reviewState) {
+      // Eliminar archivos temporales generados para la revisión
+      try {
+        const deleteDetections = window.anonidata.utils.deleteFile(reviewState.detectionsPath);
+        const deletePreAnonymized = window.anonidata.utils.deleteFile(reviewState.preAnonymizedPath);
+
+        const [detectionsDeleted, preAnonymizedDeleted] = await Promise.all([
+          deleteDetections,
+          deletePreAnonymized
+        ]);
+
+        if (!detectionsDeleted) {
+          console.warn(`No se pudo eliminar el archivo de detecciones: ${reviewState.detectionsPath}`);
+        }
+        if (!preAnonymizedDeleted) {
+          console.warn(`No se pudo eliminar el PDF temporal: ${reviewState.preAnonymizedPath}`);
+        }
+
+        console.log('Archivos temporales eliminados exitosamente');
+      } catch (error) {
+        console.error('Error al eliminar archivos temporales:', error);
+      }
+    }
+
     setReviewState(null);
   };
 

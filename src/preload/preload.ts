@@ -29,6 +29,7 @@ export interface AnoniDataAPI {
   utils: {
     getFilePath: (file: File) => string;
     openExternal: (url: string) => Promise<void>;
+    deleteFile: (filePath: string) => Promise<boolean>;
   };
   updater: {
     checkForUpdates: () => Promise<UpdateInfo>;
@@ -134,6 +135,7 @@ const api: AnoniDataAPI = {
   utils: {
     getFilePath: (file: File) => webUtils.getPathForFile(file),
     openExternal: (url: string) => ipcRenderer.invoke('utils:openExternal', url),
+    deleteFile: (filePath: string) => ipcRenderer.invoke('utils:deleteFile', filePath),
   },
   updater: {
     checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),

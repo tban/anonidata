@@ -2,12 +2,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
 
-// Configurar worker de PDF.js usando archivo local en lugar de CDN
-// Esto es necesario porque Electron bloquea requests externas en producción
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString()
+// Configurar worker de PDF.js
+// El worker está copiado en la carpeta public y Vite lo incluye en el build
+// Usar ruta relativa para que funcione en producción con Electron
+pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'
 
 interface PDFViewerProps {
   pdfPath: string

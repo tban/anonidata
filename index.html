@@ -3,8 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
     <title>AnoniData</title>
+    <script>
+      // Polyfill de process para compatibilidad con librerías que lo necesitan
+      window.process = window.process || {
+        env: {},
+        versions: {},
+        type: 'renderer',
+        browser: true
+      };
+      window.global = window.globalThis || window;
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -8,9 +8,16 @@ const packageJson = require('./package.json');
 export default defineConfig({
   plugins: [react()],
   base: './',
+  publicDir: 'public',
   build: {
     outDir: 'dist/renderer',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // No generar polyfills para process, global, etc.
+        inlineDynamicImports: false,
+      },
+    },
   },
   resolve: {
     alias: {
@@ -32,5 +39,8 @@ export default defineConfig({
       hour: '2-digit',
       minute: '2-digit',
     })),
+    // Proveer variables globales para compatibilidad con librerías
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    'global': 'globalThis',
   },
 });
