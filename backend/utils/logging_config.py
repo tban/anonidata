@@ -52,11 +52,18 @@ def setup_logging():
     # Remover handlers por defecto
     logger.remove()
 
+    # Detectar si estamos en un ejecutable empaquetado (PyInstaller)
+    import sys
+    is_frozen = getattr(sys, 'frozen', False)
+
+    # En producción (empaquetado), usar INFO. En desarrollo, usar DEBUG
+    console_level = "INFO" if is_frozen else "DEBUG"
+
     # Console handler (para desarrollo)
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        level="DEBUG",
+        level=console_level,
         filter=SanitizingFilter(),
     )
 

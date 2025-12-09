@@ -165,11 +165,16 @@ class PIIDetector:
         matches.extend(visual_matches)
 
         # 6. Detección de partes individuales de nombres (apellidos/nombres sueltos)
-        logger.debug("Detectando partes individuales de nombres...")
-        all_text_blocks = pdf_data.text_blocks + ocr_text_blocks
-        name_part_matches = self._detect_name_parts(matches, all_text_blocks)
-        logger.debug(f"Detección de partes encontró {len(name_part_matches)} ocurrencias adicionales")
-        matches.extend(name_part_matches)
+        # OPTIMIZACIÓN: Deshabilitar para PDFs grandes (>50 páginas) por rendimiento
+        total_pages = len(pdf_data.text_blocks)  # Aproximación del número de páginas
+        if total_pages <= 50:
+            logger.debug("Detectando partes individuales de nombres...")
+            all_text_blocks = pdf_data.text_blocks + ocr_text_blocks
+            name_part_matches = self._detect_name_parts(matches, all_text_blocks)
+            logger.debug(f"Detección de partes encontró {len(name_part_matches)} ocurrencias adicionales")
+            matches.extend(name_part_matches)
+        else:
+            logger.info(f"PDF grande ({total_pages} páginas aprox), saltando detección de partes de nombres para mejor rendimiento")
 
         # Eliminar duplicados (solapamiento)
         matches = self._remove_duplicates(matches)
