@@ -32,6 +32,7 @@ const store = new Store({
 
 let mainWindow: any = null;
 let pythonProcess: ChildProcessType = null;
+let pythonBackendReady: boolean = false;
 let appUpdater: AppUpdater | null = null;
 
 function createWindow() {
@@ -76,40 +77,87 @@ function createWindow() {
   });
 }
 
-// Iniciar proceso Python
-function startPythonBackend() {
-  const pythonPath = isDev
-    ? path.join(app.getAppPath(), 'backend/main.py')
-    : path.join((process as any).resourcesPath, 'anonidata-backend');
+// Iniciar proceso Python y esperar señal READY
+function startPythonBackend(): Promise<ChildProcessType> {
+  return new Promise((resolve, reject) => {
+    const pythonPath = isDev
+      ? path.join(app.getAppPath(), 'backend/main.py')
+      : path.join((process as any).resourcesPath, 'anonidata-backend');
 
-  log.info(`Iniciando backend Python: ${pythonPath}`);
+    log.info(`Iniciando backend Python: ${pythonPath}`);
 
-  const pythonExecutable = isDev
-    ? path.join(app.getAppPath(), 'backend/venv/bin/python3')
-    : pythonPath;
-  const args = isDev ? [pythonPath] : [];
+    const pythonExecutable = isDev
+      ? path.join(app.getAppPath(), 'backend/venv/bin/python3')
+      : pythonPath;
+    const args = isDev ? [pythonPath] : [];
 
-  pythonProcess = spawn(pythonExecutable, args, {
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-
-  if (pythonProcess.stdout) {
-    pythonProcess.stdout.on('data', (data: Buffer) => {
-      log.info(`[Python] ${data.toString()}`);
+    pythonProcess = spawn(pythonExecutable, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-  }
 
-  if (pythonProcess.stderr) {
-    pythonProcess.stderr.on('data', (data: Buffer) => {
-      log.error(`[Python Error] ${data.toString()}`);
+    let readyReceived = false;
+    let stdoutBuffer = '';
+
+    // Timeout de 2 minutos para inicio (necesario para Windows con PyInstaller)
+    const startupTimeout = setTimeout(() => {
+      if (!readyReceived) {
+        log.error('Timeout esperando inicio del backend Python (2 minutos)');
+        reject(new Error('Backend Python no respondió en 2 minutos'));
+      }
+    }, 120000);
+
+    if (pythonProcess.stdout) {
+      pythonProcess.stdout.on('data', (data: Buffer) => {
+        const output = data.toString();
+        stdoutBuffer += output;
+
+        // Intentar parsear cada línea como JSON
+        const lines = stdoutBuffer.split('\n');
+        stdoutBuffer = lines.pop() || ''; // Guardar última línea incompleta
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const json = JSON.parse(line);
+              // Detectar señal READY
+              if (json.status === 'ready' && !readyReceived) {
+                readyReceived = true;
+                pythonBackendReady = true;
+                clearTimeout(startupTimeout);
+                log.info('✓ Backend Python listo y esperando solicitudes');
+                resolve(pythonProcess);
+              }
+            } catch (e) {
+              // No es JSON, solo log normal
+              log.info(`[Python] ${line}`);
+            }
+          }
+        }
+      });
+    }
+
+    if (pythonProcess.stderr) {
+      pythonProcess.stderr.on('data', (data: Buffer) => {
+        log.error(`[Python Error] ${data.toString()}`);
+      });
+    }
+
+    pythonProcess.on('close', (code: number) => {
+      pythonBackendReady = false;
+      log.info(`Proceso Python cerrado con código: ${code}`);
+      if (!readyReceived) {
+        clearTimeout(startupTimeout);
+        reject(new Error(`Backend Python cerrado antes de estar listo (código: ${code})`));
+      }
     });
-  }
 
-  pythonProcess.on('close', (code: number) => {
-    log.info(`Proceso Python cerrado con código: ${code}`);
+    pythonProcess.on('error', (error: Error) => {
+      pythonBackendReady = false;
+      clearTimeout(startupTimeout);
+      log.error(`Error iniciando backend Python: ${error.message}`);
+      reject(error);
+    });
   });
-
-  return pythonProcess;
 }
 
 // App lifecycle
@@ -165,9 +213,15 @@ app.on('ready', () => {
   ipcMain.handle('process:anonymize', async (_event: any, files: string[]) => {
     log.info(`Procesando ${files.length} archivos`);
 
-    return new Promise((resolve, reject) => {
-      if (!pythonProcess || pythonProcess.exitCode !== null) {
-        pythonProcess = startPythonBackend();
+    return new Promise(async (resolve, reject) => {
+      if (!pythonProcess || pythonProcess.exitCode !== null || !pythonBackendReady) {
+        try {
+          log.info('Iniciando backend Python...');
+          await startPythonBackend();
+        } catch (error: any) {
+          reject(new Error(`Error iniciando backend: ${error.message}`));
+          return;
+        }
       }
 
       const request = {
@@ -216,9 +270,15 @@ app.on('ready', () => {
   ipcMain.handle('process:detectOnly', async (_event: any, filePath: string) => {
     log.info(`Detectando PII en: ${filePath}`);
 
-    return new Promise((resolve, reject) => {
-      if (!pythonProcess || pythonProcess.exitCode !== null) {
-        pythonProcess = startPythonBackend();
+    return new Promise(async (resolve, reject) => {
+      if (!pythonProcess || pythonProcess.exitCode !== null || !pythonBackendReady) {
+        try {
+          log.info('Iniciando backend Python...');
+          await startPythonBackend();
+        } catch (error: any) {
+          reject(new Error(`Error iniciando backend: ${error.message}`));
+          return;
+        }
       }
 
       const request = {
@@ -283,9 +343,15 @@ app.on('ready', () => {
     async (_event: any, originalFile: string, detectionsPath: string, approvedIndices: number[]) => {
       log.info(`Finalizando anonimización para: ${originalFile}`);
 
-      return new Promise((resolve, reject) => {
-        if (!pythonProcess || pythonProcess.exitCode !== null) {
-          pythonProcess = startPythonBackend();
+      return new Promise(async (resolve, reject) => {
+        if (!pythonProcess || pythonProcess.exitCode !== null || !pythonBackendReady) {
+          try {
+            log.info('Iniciando backend Python...');
+            await startPythonBackend();
+          } catch (error: any) {
+            reject(new Error(`Error iniciando backend: ${error.message}`));
+            return;
+          }
         }
 
         const request = {

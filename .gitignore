@@ -56,8 +56,6 @@ tmp/
 # Backend specific
 backend/dist/
 backend/build/
-backend/*.spec
-*.spec
 
 # Compiled executables (too large for GitHub)
 resources/

@@ -223,6 +223,11 @@ def main():
     logger.info("Backend Python iniciado")
     logger.info("Esperando solicitudes...")
 
+    # Enviar señal READY a Electron para indicar que el backend está listo
+    ready_signal = {"status": "ready", "message": "Backend iniciado correctamente"}
+    sys.stdout.write(json.dumps(ready_signal) + "\n")
+    sys.stdout.flush()
+
     try:
         for line in sys.stdin:
             try:

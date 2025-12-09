@@ -38,7 +38,6 @@ mypy_extensions==1.1.0
 networkx==3.6
 ninja==1.13.0
 numpy==1.26.4
-opencv-python==4.11.0.86
 opencv-python-headless==4.11.0.86
 packaging==25.0
 pathspec==0.12.1
