@@ -193,76 +193,98 @@ class Anonymizer:
 
     def _anonymize_scanned_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
         """
-        Anonimiza una página escaneada renderizándola y dibujando sobre ella
+        Anonimiza una página escaneada usando overlay de rectángulos
 
         Args:
             page: Página de PyMuPDF
             matches: Matches a redactar
         """
-        # Renderizar la página completa a alta resolución
-        mat = fitz.Matrix(3.0, 3.0)  # 3x para mejor calidad
-        pix = page.get_pixmap(matrix=mat, alpha=False)
+        # Para páginas escaneadas, dibujar rectángulos directamente sobre la página
+        # SIN usar redacciones que eliminan las imágenes
+        # La imagen subyacente se mantiene intacta
 
-        # Convertir a imagen PIL para procesamiento
-        img_data = pix.tobytes("png")
-        img = Image.open(io.BytesIO(img_data))
-        img_array = np.array(img)
-
-        # Factor de escala
-        scale_x = pix.width / page.rect.width
-        scale_y = pix.height / page.rect.height
-
-        # Dibujar rectángulos de anonimización sobre la imagen
         for match in matches:
             bbox = match.bbox
+            rect = fitz.Rect(bbox)
 
-            # Convertir coordenadas PDF a coordenadas de imagen
-            x0 = int(bbox[0] * scale_x)
-            y0 = int(bbox[1] * scale_y)
-            x1 = int(bbox[2] * scale_x)
-            y1 = int(bbox[3] * scale_y)
-
-            # Aplicar anonimización según estrategia
             if self.settings.redaction_strategy == "black_box":
-                # Rectángulo gris
-                color = tuple(int(c * 255) for c in self.settings.redaction_color)
-                img_array[y0:y1, x0:x1] = color
+                # Dibujar rectángulo relleno directamente sobre la página
+                shape = page.new_shape()
+                shape.draw_rect(rect)
+                shape.finish(
+                    fill=self.settings.redaction_color,
+                    color=None,  # Sin borde
+                )
+                shape.commit()
+
             elif self.settings.redaction_strategy == "pixelate":
-                # Pixelar región
-                region = img_array[y0:y1, x0:x1]
-                if region.size > 0:
-                    h, w = region.shape[:2]
+                # Para pixelación, renderizar solo la región y reemplazarla
+                try:
+                    # Renderizar región a alta resolución
+                    mat = fitz.Matrix(3.0, 3.0)
+                    pix = page.get_pixmap(matrix=mat, clip=rect)
+
+                    # Convertir a PIL y pixelar
+                    img_data = pix.tobytes("png")
+                    img = Image.open(io.BytesIO(img_data))
+                    img_array = np.array(img)
+
+                    h, w = img_array.shape[:2]
                     pixel_size = self.settings.pixelation_level
                     temp_h = max(1, h // pixel_size)
                     temp_w = max(1, w // pixel_size)
+
                     if cv2 is not None:
-                        temp = cv2.resize(region, (temp_w, temp_h), interpolation=cv2.INTER_LINEAR)
+                        temp = cv2.resize(img_array, (temp_w, temp_h), interpolation=cv2.INTER_LINEAR)
                         pixelated = cv2.resize(temp, (w, h), interpolation=cv2.INTER_NEAREST)
-                        img_array[y0:y1, x0:x1] = pixelated
+                        pixelated_img = Image.fromarray(pixelated)
                     else:
                         # Fallback a rectángulo gris
-                        color = tuple(int(c * 255) for c in self.settings.redaction_color)
-                        img_array[y0:y1, x0:x1] = color
+                        pixelated_img = Image.new('RGB', (w, h), color=tuple(int(c * 255) for c in self.settings.redaction_color))
+
+                    # Guardar como bytes
+                    img_bytes = io.BytesIO()
+                    pixelated_img.save(img_bytes, format='PNG')
+                    img_bytes.seek(0)
+
+                    # Insertar imagen pixelada sobre la región (overlay)
+                    page.insert_image(rect, stream=img_bytes.getvalue(), overlay=True)
+
+                except Exception as e:
+                    logger.warning(f"Error aplicando pixelación en scanned page: {e}, usando rectángulo")
+                    # Fallback a rectángulo
+                    shape = page.new_shape()
+                    shape.draw_rect(rect)
+                    shape.finish(fill=self.settings.redaction_color, color=None)
+                    shape.commit()
+
             elif self.settings.redaction_strategy == "blur":
-                # Difuminar región
-                region = img_array[y0:y1, x0:x1]
-                if region.size > 0:
-                    region_img = Image.fromarray(region)
-                    blurred = region_img.filter(ImageFilter.GaussianBlur(radius=20))
-                    img_array[y0:y1, x0:x1] = np.array(blurred)
+                # Para blur, renderizar región y difuminar
+                try:
+                    # Renderizar región a alta resolución
+                    mat = fitz.Matrix(3.0, 3.0)
+                    pix = page.get_pixmap(matrix=mat, clip=rect)
 
-        # Convertir de vuelta a imagen PIL
-        final_img = Image.fromarray(img_array)
+                    # Convertir a PIL y difuminar
+                    img_data = pix.tobytes("png")
+                    img = Image.open(io.BytesIO(img_data))
+                    blurred = img.filter(ImageFilter.GaussianBlur(radius=20))
 
-        # Guardar como bytes
-        img_bytes = io.BytesIO()
-        final_img.save(img_bytes, format='PNG', dpi=(300, 300))
-        img_bytes.seek(0)
+                    # Guardar como bytes
+                    img_bytes = io.BytesIO()
+                    blurred.save(img_bytes, format='PNG')
+                    img_bytes.seek(0)
 
-        # Limpiar página y añadir imagen anonimizada
-        page.clean_contents()
-        page_rect = page.rect
-        page.insert_image(page_rect, stream=img_bytes.getvalue(), keep_proportion=True)
+                    # Insertar imagen difuminada sobre la región (overlay)
+                    page.insert_image(rect, stream=img_bytes.getvalue(), overlay=True)
+
+                except Exception as e:
+                    logger.warning(f"Error aplicando blur en scanned page: {e}, usando rectángulo")
+                    # Fallback a rectángulo
+                    shape = page.new_shape()
+                    shape.draw_rect(rect)
+                    shape.finish(fill=self.settings.redaction_color, color=None)
+                    shape.commit()
 
     def _anonymize_text_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
         """
