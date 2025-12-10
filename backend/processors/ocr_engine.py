@@ -94,8 +94,10 @@ class OCREngine:
         for page_num in range(pdf_data.page_count):
             has_text = any(b.page_num == page_num for b in pdf_data.text_blocks)
 
-            if not has_text and page_num not in pages_processed:
-                logger.debug(f"Página {page_num} sin texto, aplicando OCR")
+            if not has_text:
+                # Si la página no tiene texto, procesarla completa independientemente
+                # de si ya se procesó parcialmente una imagen grande
+                logger.debug(f"Página {page_num} sin texto, aplicando OCR a página completa")
 
                 # Renderizar página completa
                 page = pdf_data.document[page_num]
@@ -110,7 +112,10 @@ class OCREngine:
                     img, page_num, (0, 0, page.rect.width, page.rect.height)
                 )
                 results.extend(ocr_results)
-                pages_processed.append(page_num)
+
+                # Marcar como procesada solo si no estaba ya
+                if page_num not in pages_processed:
+                    pages_processed.append(page_num)
 
         logger.debug(f"OCR completado: {len(results)} resultados")
 
