@@ -149,6 +149,129 @@ class Anonymizer:
         """
         logger.info(f"Anonimizando página {page.number}: {len(matches)} detecciones")
 
+        # Detectar si la página es principalmente imagen escaneada
+        is_scanned = self._is_scanned_page(page)
+
+        if is_scanned:
+            logger.info(f"Página {page.number} detectada como escaneada, usando método de renderizado")
+            self._anonymize_scanned_page(page, matches)
+        else:
+            logger.info(f"Página {page.number} con texto nativo, usando redacciones estándar")
+            self._anonymize_text_page(page, matches)
+
+    def _is_scanned_page(self, page: fitz.Page) -> bool:
+        """
+        Detecta si una página es principalmente imagen escaneada
+
+        Args:
+            page: Página de PyMuPDF
+
+        Returns:
+            True si es página escaneada, False si tiene texto nativo
+        """
+        # Obtener texto de la página
+        text = page.get_text().strip()
+
+        # Obtener lista de imágenes
+        image_list = page.get_images(full=True)
+
+        # Si no tiene texto pero tiene imágenes grandes, es escaneada
+        if len(text) < 50 and len(image_list) > 0:
+            # Verificar si hay al menos una imagen grande (>50% de la página)
+            page_area = page.rect.width * page.rect.height
+            for img in image_list:
+                xref = img[0]
+                try:
+                    img_rect = page.get_image_bbox(xref)
+                    img_area = (img_rect.x1 - img_rect.x0) * (img_rect.y1 - img_rect.y0)
+                    if img_area > page_area * 0.5:
+                        return True
+                except:
+                    pass
+
+        return False
+
+    def _anonymize_scanned_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
+        """
+        Anonimiza una página escaneada renderizándola y dibujando sobre ella
+
+        Args:
+            page: Página de PyMuPDF
+            matches: Matches a redactar
+        """
+        # Renderizar la página completa a alta resolución
+        mat = fitz.Matrix(3.0, 3.0)  # 3x para mejor calidad
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+
+        # Convertir a imagen PIL para procesamiento
+        img_data = pix.tobytes("png")
+        img = Image.open(io.BytesIO(img_data))
+        img_array = np.array(img)
+
+        # Factor de escala
+        scale_x = pix.width / page.rect.width
+        scale_y = pix.height / page.rect.height
+
+        # Dibujar rectángulos de anonimización sobre la imagen
+        for match in matches:
+            bbox = match.bbox
+
+            # Convertir coordenadas PDF a coordenadas de imagen
+            x0 = int(bbox[0] * scale_x)
+            y0 = int(bbox[1] * scale_y)
+            x1 = int(bbox[2] * scale_x)
+            y1 = int(bbox[3] * scale_y)
+
+            # Aplicar anonimización según estrategia
+            if self.settings.redaction_strategy == "black_box":
+                # Rectángulo gris
+                color = tuple(int(c * 255) for c in self.settings.redaction_color)
+                img_array[y0:y1, x0:x1] = color
+            elif self.settings.redaction_strategy == "pixelate":
+                # Pixelar región
+                region = img_array[y0:y1, x0:x1]
+                if region.size > 0:
+                    h, w = region.shape[:2]
+                    pixel_size = self.settings.pixelation_level
+                    temp_h = max(1, h // pixel_size)
+                    temp_w = max(1, w // pixel_size)
+                    if cv2 is not None:
+                        temp = cv2.resize(region, (temp_w, temp_h), interpolation=cv2.INTER_LINEAR)
+                        pixelated = cv2.resize(temp, (w, h), interpolation=cv2.INTER_NEAREST)
+                        img_array[y0:y1, x0:x1] = pixelated
+                    else:
+                        # Fallback a rectángulo gris
+                        color = tuple(int(c * 255) for c in self.settings.redaction_color)
+                        img_array[y0:y1, x0:x1] = color
+            elif self.settings.redaction_strategy == "blur":
+                # Difuminar región
+                region = img_array[y0:y1, x0:x1]
+                if region.size > 0:
+                    region_img = Image.fromarray(region)
+                    blurred = region_img.filter(ImageFilter.GaussianBlur(radius=20))
+                    img_array[y0:y1, x0:x1] = np.array(blurred)
+
+        # Convertir de vuelta a imagen PIL
+        final_img = Image.fromarray(img_array)
+
+        # Guardar como bytes
+        img_bytes = io.BytesIO()
+        final_img.save(img_bytes, format='PNG', dpi=(300, 300))
+        img_bytes.seek(0)
+
+        # Limpiar página y añadir imagen anonimizada
+        page.clean_contents()
+        page_rect = page.rect
+        page.insert_image(page_rect, stream=img_bytes.getvalue(), keep_proportion=True)
+
+    def _anonymize_text_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
+        """
+        Anonimiza una página con texto nativo usando redacciones estándar
+
+        Args:
+            page: Página de PyMuPDF
+            matches: Matches a redactar
+        """
         # Marcar todas las regiones para redacción
         for i, match in enumerate(matches, 1):
             bbox = match.bbox
@@ -161,12 +284,9 @@ class Anonymizer:
             elif self.settings.redaction_strategy == "blur":
                 self._apply_blur(page, bbox)
 
-        # Aplicar todas las redacciones de golpe (ELIMINA el contenido permanentemente)
-        # Esto borra el texto subyacente y lo reemplaza con el relleno especificado
-        # IMPORTANTE: Para PDFs escaneados, usar PDF_REDACT_IMAGE_PIXELS para modificar
-        # los píxeles de la imagen en lugar de eliminarla completamente
+        # Aplicar redacciones (solo para páginas con texto)
         logger.info(f"Aplicando {len(matches)} redacciones a página {page.number}")
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
     def _apply_black_box(self, page: fitz.Page, bbox: tuple) -> None:
         """
