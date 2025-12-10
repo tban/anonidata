@@ -163,8 +163,10 @@ class Anonymizer:
 
         # Aplicar todas las redacciones de golpe (ELIMINA el contenido permanentemente)
         # Esto borra el texto subyacente y lo reemplaza con el relleno especificado
+        # IMPORTANTE: Para PDFs escaneados, usar PDF_REDACT_IMAGE_PIXELS para modificar
+        # los píxeles de la imagen en lugar de eliminarla completamente
         logger.info(f"Aplicando {len(matches)} redacciones a página {page.number}")
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE)
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
 
     def _apply_black_box(self, page: fitz.Page, bbox: tuple) -> None:
         """

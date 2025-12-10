@@ -21,7 +21,7 @@ except:
 
 # Construir lista de datas
 datas_list = [
-    ('/Users/tban/Documents/Desarrollos/anonidata/config', 'config'),
+    ('/Users/tban/Documents/Desarrollos/anonidata/backend/config', 'config'),
 ]
 
 # Agregar modelo spaCy si existe
@@ -32,10 +32,10 @@ if spacy_model_path and spacy_model_path.exists():
 else:
     print("⚠ Modelo spaCy no encontrado - NER no estará disponible")
 
-print(f"✓ Incluyendo configuración desde: /Users/tban/Documents/Desarrollos/anonidata/config")
+print(f"✓ Incluyendo configuración desde: /Users/tban/Documents/Desarrollos/anonidata/backend/config")
 
 a = Analysis(
-    ['/Users/tban/Documents/Desarrollos/anonidata/main.py'],
+    ['/Users/tban/Documents/Desarrollos/anonidata/backend/main.py'],
     pathex=[],
     binaries=[],
     datas=datas_list,
