@@ -12,18 +12,8 @@ module.exports = {
   },
   rebuildConfig: {},
   makers: [
-    {
-      name: '@electron-forge/maker-squirrel',
-      // NO platforms property - Squirrel is Windows-only by default
-      config: {
-        name: 'anonidata',
-        authors: 'AnoniData',
-        exe: 'anonidata.exe',
-        setupExe: 'AnoniData-Setup-ARM64.exe',
-        setupIcon: './build/icon.ico',
-        noMsi: true
-      }
-    },
+    // Squirrel no funciona bien con ARM64 en Windows
+    // Solo usar ZIP para Windows ARM64
     {
       name: '@electron-forge/maker-zip',
       platforms: ['win32']

@@ -161,6 +161,18 @@ contextBridge.exposeInMainWorld('electronWebUtils', {
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
 });
 
+// Exponer ipcRenderer para escuchar eventos del menú
+contextBridge.exposeInMainWorld('electron', {
+  ipcRenderer: {
+    on: (channel: string, func: (...args: any[]) => void) => {
+      ipcRenderer.on(channel, (_event: any, ...args: any[]) => func(...args));
+    },
+    removeListener: (channel: string, func: (...args: any[]) => void) => {
+      ipcRenderer.removeListener(channel, func);
+    },
+  },
+});
+
 contextBridge.exposeInMainWorld('anonidata', api);
 
 // Declaración global para TypeScript
@@ -169,6 +181,12 @@ declare global {
     anonidata: AnoniDataAPI;
     electronWebUtils: {
       getPathForFile: (file: File) => string;
+    };
+    electron: {
+      ipcRenderer: {
+        on: (channel: string, func: (...args: any[]) => void) => void;
+        removeListener: (channel: string, func: (...args: any[]) => void) => void;
+      };
     };
   }
 

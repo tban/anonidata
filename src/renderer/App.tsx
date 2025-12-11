@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { ProcessResult } from '../preload/preload';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { UpdateNotification } from './components/UpdateNotification';
@@ -39,6 +39,20 @@ function App() {
     warnings?: Array<{ file: string; warnings: string[] }>;
     message?: string;
   } | null>(null);
+
+  // Listener para el menú de la aplicación
+  useEffect(() => {
+    const handleShowAbout = () => setShowAboutModal(true);
+
+    // @ts-ignore - window.electron existe en Electron
+    if (window.electron && window.electron.ipcRenderer) {
+      window.electron.ipcRenderer.on('show-about-modal', handleShowAbout);
+
+      return () => {
+        window.electron.ipcRenderer.removeListener('show-about-modal', handleShowAbout);
+      };
+    }
+  }, []);
 
   const handleSelectFiles = useCallback(async () => {
     const filePaths = await window.anonidata.dialog.openFile();

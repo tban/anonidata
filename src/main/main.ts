@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, session, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, nativeImage, Menu } = require('electron');
 const path = require('path');
 const log = require('electron-log');
 const Store = require('electron-store');
@@ -34,6 +34,35 @@ let mainWindow: any = null;
 let pythonProcess: ChildProcessType = null;
 let pythonBackendReady: boolean = false;
 let appUpdater: AppUpdater | null = null;
+
+function createApplicationMenu() {
+  const template: any[] = [
+    {
+      label: 'AnoniData',
+      submenu: [
+        {
+          label: 'Acerca de AnoniData',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.send('show-about-modal');
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Salir',
+          accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+          click: () => {
+            app.quit();
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
 
 function createWindow() {
   const { width, height } = store.get('windowBounds') as { width: number; height: number };
@@ -535,6 +564,7 @@ app.on('ready', () => {
   });
 
   createWindow();
+  createApplicationMenu();
   startPythonBackend();
 
   // Inicializar sistema de actualizaciones
