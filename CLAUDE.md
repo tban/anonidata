@@ -177,6 +177,27 @@ git push origin main
 **Causa**: Comportamiento por defecto de Electron en macOS
 **Solución**: Forzar `app.quit()` en evento `window-all-closed`
 
+### "Error al cargar el PDF" en pantalla de revisión manual
+**Causa**: `fetch()` con `file://` URLs no funciona en Electron por restricciones de seguridad
+**Solución**: Usar handler IPC para leer archivos desde el proceso principal
+```typescript
+// En preload.ts - Agregar a AnoniDataAPI
+utils: {
+  readPdfFile: (filePath: string) => Promise<ArrayBuffer>;
+}
+
+// En main.ts - Agregar handler IPC
+ipcMain.handle('utils:readPdfFile', async (_event, filePath) => {
+  const fs = require('fs').promises;
+  const buffer = await fs.readFile(filePath);
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+});
+
+// En PDFViewer.tsx - Usar IPC en lugar de fetch
+const arrayBuffer = await window.anonidata.utils.readPdfFile(pdfPath);
+const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+```
+
 ## 📊 Testing y Validación
 
 ### Verificar Detecciones
@@ -513,8 +534,9 @@ ls -lh out/make/anonidata-1.0.0-arm64.dmg
 5. **Usar git descriptivamente**: Commits claros facilitan debugging y rollbacks
 6. **Priorizar bboxes precisas**: Mejorar la experiencia de usuario en revisión manual
 7. **Solo arm64 para macOS**: Configurado para Apple Silicon (M1/M2/M3)
+8. **IPC para operaciones de archivos**: NUNCA usar `fetch()` con `file://` en Electron, siempre usar handlers IPC (ej: `readPdfFile`)
 
 ---
 
-**Última actualización**: 8 Diciembre 2025
+**Última actualización**: 10 Diciembre 2025
 **Versión del proyecto**: 1.0.0 (arm64 optimizado)

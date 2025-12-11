@@ -206,52 +206,18 @@ class Anonymizer:
             bbox = match.bbox
             rect = fitz.Rect(bbox)
 
-            if self.settings.redaction_strategy == "black_box":
-                # Crear anotación de cuadrado (square annotation)
-                # Estas son overlays que se colocan SOBRE el contenido
-                annot = page.add_square_annot(rect)
+            # Usar page.new_shape() para dibujar rectángulos opacos
+            # Este método se verificó que funciona correctamente con el script de prueba
+            shape = page.new_shape()
+            shape.draw_rect(rect)
+            shape.finish(
+                fill=self.settings.redaction_color,
+                color=self.settings.redaction_color,
+                width=0
+            )
+            shape.commit()
 
-                # Configurar apariencia: relleno opaco sin borde
-                annot.set_colors(
-                    stroke=self.settings.redaction_color,  # Color del borde
-                    fill=self.settings.redaction_color     # Color de relleno
-                )
-
-                # Opacidad completa (1.0 = totalmente opaco)
-                annot.set_opacity(1.0)
-
-                # Sin borde visible (width=0)
-                annot.set_border(width=0)
-
-                # Actualizar apariencia de la anotación
-                annot.update()
-
-                logger.debug(f"  Anotación cuadrada creada en {bbox}")
-
-            elif self.settings.redaction_strategy == "pixelate":
-                # Para pixelate, también usar anotación como fallback simple
-                # En lugar de intentar insert_image que puede fallar
-                annot = page.add_square_annot(rect)
-                annot.set_colors(
-                    stroke=self.settings.redaction_color,
-                    fill=self.settings.redaction_color
-                )
-                annot.set_opacity(1.0)
-                annot.set_border(width=0)
-                annot.update()
-                logger.debug(f"  Anotación para pixelate (fallback a cuadrado) en {bbox}")
-
-            elif self.settings.redaction_strategy == "blur":
-                # Para blur, también usar anotación como fallback simple
-                annot = page.add_square_annot(rect)
-                annot.set_colors(
-                    stroke=self.settings.redaction_color,
-                    fill=self.settings.redaction_color
-                )
-                annot.set_opacity(1.0)
-                annot.set_border(width=0)
-                annot.update()
-                logger.debug(f"  Anotación para blur (fallback a cuadrado) en {bbox}")
+            logger.debug(f"  Rectángulo de anonimización dibujado en {bbox}")
 
         logger.info(f"Página escaneada {page.number} anonimizada con anotaciones overlay")
 
