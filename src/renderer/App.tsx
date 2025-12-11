@@ -296,28 +296,58 @@ function App() {
       );
 
       if (result.success) {
-        await window.anonidata.dialog.showInfo(
-          `Anonimización completada exitosamente.\n\n` +
-          `Detecciones aprobadas: ${result.totalApproved}\n` +
-          `Detecciones rechazadas: ${result.totalRejected}\n\n` +
-          `Archivo guardado en: ${result.anonymizedPath}`,
-          'Anonimización Completada'
-        );
+        // Cerrar vista de revisión primero
+        setReviewState(null);
 
+        // Mostrar modal de completación igual que el proceso automático
+        setCompletionData({
+          type: 'success',
+          successCount: 1,
+          errorCount: 0,
+          totalFiles: 1,
+          processingTime: '0',
+          warnings: result.warnings && result.warnings.length > 0 ? [{
+            file: reviewState.originalFilePath.split('/').pop() || reviewState.originalFilePath,
+            warnings: result.warnings
+          }] : undefined,
+        });
+        setShowCompletionModal(true);
+      } else {
         // Cerrar vista de revisión
         setReviewState(null);
-      } else {
-        await window.anonidata.dialog.showInfo(
-          `Error al finalizar la anonimización: ${result.error}`,
-          'Error'
-        );
+
+        // Mostrar error en modal
+        setCompletionData({
+          type: 'error',
+          successCount: 0,
+          errorCount: 1,
+          totalFiles: 1,
+          processingTime: '0',
+          errors: [{
+            file: reviewState.originalFilePath.split('/').pop() || reviewState.originalFilePath,
+            error: result.error || 'Error desconocido'
+          }],
+        });
+        setShowCompletionModal(true);
       }
     } catch (error) {
       console.error('Error finalizando anonimización:', error);
-      await window.anonidata.dialog.showInfo(
-        `Error al finalizar la anonimización: ${error}`,
-        'Error'
-      );
+
+      // Cerrar vista de revisión
+      if (reviewState) {
+        setReviewState(null);
+
+        // Mostrar error crítico en modal
+        setCompletionData({
+          type: 'critical',
+          successCount: 0,
+          errorCount: 1,
+          totalFiles: 1,
+          processingTime: '0',
+          message: error instanceof Error ? error.message : 'Error desconocido',
+        });
+        setShowCompletionModal(true);
+      }
     }
   };
 

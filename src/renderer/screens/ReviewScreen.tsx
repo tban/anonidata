@@ -72,6 +72,10 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
 
         if (result.success && result.detections) {
           setDetections(result.detections)
+
+          // Marcar todas las detecciones como aprobadas por defecto
+          const allIndices = new Set(result.detections.map((d: Detection) => d.index))
+          setApprovedIndices(allIndices)
         } else {
           console.error('Error cargando detecciones:', result.error)
         }
