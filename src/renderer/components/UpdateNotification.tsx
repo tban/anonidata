@@ -137,7 +137,7 @@ export const UpdateNotification: React.FC = () => {
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              className="bg-teal-600 h-2 rounded-full transition-all duration-300"
               style={{ width: `${updateState.progress}%` }}
             />
           </div>
@@ -160,7 +160,7 @@ export const UpdateNotification: React.FC = () => {
             {isWindows && (
               <button
                 onClick={handleDownload}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
               >
                 Descargar e instalar
               </button>
@@ -168,7 +168,7 @@ export const UpdateNotification: React.FC = () => {
             {isMac && (
               <button
                 onClick={handleDownload}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
               >
                 Ir a descargas
               </button>

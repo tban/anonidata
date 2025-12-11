@@ -235,7 +235,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   console.log('ReviewScreen - Tipos:', currentPageDetections.map(d => `${d.type} (${d.text.substring(0, 20)}...)`))
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+    <div className="flex h-screen bg-gradient-to-br from-teal-50 to-cyan-50">
       {/* Sidebar */}
       <div className="w-80 glass border-r border-gray-200/50 shadow-2xl flex flex-col">
         {/* Header */}
@@ -255,9 +255,9 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
               <span className="text-gray-600">Total:</span>
               <span className="font-semibold">{stats.total}</span>
             </div>
-            <div className="flex items-center justify-between p-2 bg-red-50 rounded">
-              <span className="text-red-700">Anonimizar:</span>
-              <span className="font-semibold text-red-700">{stats.approved}</span>
+            <div className="flex items-center justify-between p-2 rounded" style={{ backgroundColor: '#fff5f3' }}>
+              <span style={{ color: '#FF6B54' }}>Anonimizar:</span>
+              <span className="font-semibold" style={{ color: '#FF6B54' }}>{stats.approved}</span>
             </div>
             <div className="flex items-center justify-between p-2 bg-orange-50 rounded">
               <span className="text-orange-700">Mantener:</span>
@@ -306,14 +306,15 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
                   <div
                     key={detection.index}
                     className={`p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 scale-on-hover ${
-                      isHovered ? 'ring-2 ring-blue-400 shadow-lg' : 'shadow-md'
+                      isHovered ? 'ring-2 ring-teal-400 shadow-lg' : 'shadow-md'
                     } ${
                       isApproved
-                        ? 'bg-red-50 border-red-300'
+                        ? 'border-2'
                         : isRejected
-                        ? 'bg-orange-50 border-orange-300'
+                        ? 'bg-amber-50 border-amber-300'
                         : 'bg-white border-gray-300 hover:border-gray-400 hover:shadow-xl'
                     }`}
+                    style={isApproved ? { backgroundColor: '#fff5f3', borderColor: '#FF6B54' } : {}}
                     onClick={() => handleDetectionClick(detection.index)}
                   >
                     <div className="flex items-start justify-between mb-1">
@@ -330,10 +331,10 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
                         Confianza: {(detection.confidence * 100).toFixed(0)}%
                       </span>
                       {isApproved && (
-                        <span className="text-xs font-semibold text-red-700">✗ Anonimizar</span>
+                        <span className="text-xs font-semibold" style={{ color: '#FF6B54' }}>Anonimizar</span>
                       )}
                       {isRejected && (
-                        <span className="text-xs font-semibold text-orange-700">Mantener</span>
+                        <span className="text-xs font-semibold text-amber-700">Mantener</span>
                       )}
                     </div>
                   </div>
@@ -392,11 +393,12 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
               onClick={() => setIsSelectionMode(!isSelectionMode)}
               className={`px-4 py-2 rounded-lg shadow-md scale-on-hover transition-all ${
                 isSelectionMode
-                  ? 'bg-amber-600 text-white hover:bg-amber-700 ring-2 ring-amber-300'
+                  ? 'text-white hover:bg-amber-700 ring-2 ring-amber-300'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
+              style={isSelectionMode ? { backgroundColor: '#f59e0b' } : {}}
             >
-              {isSelectionMode ? '✓ Modo Selección' : '+ Añadir Área'}
+              {isSelectionMode ? 'Modo Selección' : '+ Añadir Área'}
             </button>
           </div>
 
@@ -419,7 +421,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
             </button>
             <button
               onClick={handleFitToPage}
-              className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium scale-on-hover shadow-md"
+              className="px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium scale-on-hover shadow-md"
               title="Ajustar página completa al visor"
             >
               Ajustar
@@ -438,7 +440,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
                 </div>
                 <div className="text-gray-600 text-base flex items-center gap-1">
                   {loadingStep}
-                  <span className="dots-pulse text-blue-600">
+                  <span className="dots-pulse text-teal-600">
                     <span></span>
                     <span></span>
                     <span></span>

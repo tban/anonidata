@@ -137,11 +137,11 @@
 /* Botones con efectos mejorados */
 
 .btn-primary {
-  @apply bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transition-all duration-200;
+  @apply bg-gradient-to-r from-teal-600 to-teal-700 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transition-all duration-200;
 }
 
 .btn-primary:hover:not(:disabled) {
-  @apply from-blue-700 to-blue-800 shadow-xl transform scale-105;
+  @apply from-teal-700 to-teal-800 shadow-xl transform scale-105;
 }
 
 .btn-primary:active:not(:disabled) {
@@ -165,11 +165,11 @@
 }
 
 .btn-danger {
-  @apply bg-gradient-to-r from-red-600 to-red-700 text-white font-semibold py-2 px-6 rounded-lg shadow-md transition-all duration-200;
+  @apply bg-gradient-to-r from-orange-600 to-orange-700 text-white font-semibold py-2 px-6 rounded-lg shadow-md transition-all duration-200;
 }
 
 .btn-danger:hover:not(:disabled) {
-  @apply from-red-700 to-red-800 shadow-lg transform scale-105;
+  @apply from-orange-700 to-orange-800 shadow-lg transform scale-105;
 }
 
 .btn-danger:active:not(:disabled) {
@@ -226,7 +226,7 @@
 .progress-indeterminate {
   position: relative;
   overflow: hidden;
-  background-color: rgba(59, 130, 246, 0.2);
+  background-color: rgba(20, 184, 166, 0.2);
 }
 
 .progress-indeterminate::after {
@@ -236,7 +236,7 @@
   bottom: 0;
   left: -35%;
   right: 100%;
-  background-color: #3b82f6;
+  background-color: #14b8a6;
   animation: progress-indeterminate 2s cubic-bezier(0.65, 0.815, 0.735, 0.395) infinite;
 }
 
@@ -315,7 +315,7 @@
 /* Gradientes mejorados */
 
 .gradient-primary {
-  @apply bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700;
+  @apply bg-gradient-to-br from-teal-500 via-teal-600 to-cyan-700;
 }
 
 .gradient-success {
@@ -327,7 +327,7 @@
 }
 
 .gradient-danger {
-  @apply bg-gradient-to-br from-red-500 via-red-600 to-rose-700;
+  @apply bg-gradient-to-br from-orange-500 via-orange-600 to-rose-700;
 }
 
 /* Transiciones suaves para listas */
@@ -346,5 +346,5 @@
 /* Efectos de enfoque mejorados */
 
 .focus-ring {
-  @apply focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50 transition-all;
+  @apply focus:outline-none focus:ring-4 focus:ring-teal-500 focus:ring-opacity-50 transition-all;
 }

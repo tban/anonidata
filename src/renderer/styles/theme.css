@@ -1,0 +1,124 @@
+/**
+ * AnoniData Theme Configuration
+ * Paleta de colores basada en el logo de la aplicación
+ *
+ * Colores del logo:
+ * - Beige/Crema: #F5E6D3 (cuerpo)
+ * - Coral/Naranja rojizo: #FF6B54 (barra de censura - elemento principal)
+ * - Marrón oscuro: #5C3A2E (zapatos, cejas)
+ *
+ * Estrategia de diseño:
+ * - Teal (tonos fríos) como primario para contrastar con el coral cálido del logo
+ * - Coral del logo (#FF6B54) como acento para reforzar identidad de marca
+ * - Neutros cálidos para complementar el logo
+ */
+
+:root {
+  /* Colores primarios - Teal */
+  --primary-50: #f0fdfa;
+  --primary-100: #ccfbf1;
+  --primary-200: #99f6e4;
+  --primary-300: #5eead4;
+  --primary-400: #2dd4bf;
+  --primary-500: #14b8a6;
+  --primary-600: #0d9488;
+  --primary-700: #0f766e;
+  --primary-800: #115e59;
+  --primary-900: #134e4a;
+
+  /* Acento coral (del logo AnoniData) */
+  --accent-50: #fff5f3;
+  --accent-100: #ffe8e3;
+  --accent-200: #ffd1c7;
+  --accent-300: #ffb4a4;
+  --accent-400: #ff9681;
+  --accent-500: #FF6B54; /* Color exacto del logo */
+  --accent-600: #e85a43;
+  --accent-700: #d14932;
+  --accent-800: #ba3821;
+  --accent-900: #a32710;
+
+  /* Secundario - Cyan */
+  --secondary-50: #ecfeff;
+  --secondary-100: #cffafe;
+  --secondary-200: #a5f3fc;
+  --secondary-300: #67e8f9;
+  --secondary-400: #22d3ee;
+  --secondary-500: #06b6d4;
+  --secondary-600: #0891b2;
+  --secondary-700: #0e7490;
+  --secondary-800: #155e75;
+  --secondary-900: #164e63;
+
+  /* Estados */
+  --success: #10b981; /* Verde esmeralda */
+  --error: #FF6B54; /* Coral del logo para consistencia */
+  --warning: #f59e0b; /* Ámbar */
+  --info: #06b6d4; /* Cyan */
+
+  /* Neutros cálidos (stone) */
+  --neutral-50: #fafaf9;
+  --neutral-100: #f5f5f4;
+  --neutral-200: #e7e5e4;
+  --neutral-300: #d6d3d1;
+  --neutral-400: #a8a29e;
+  --neutral-500: #78716c;
+  --neutral-600: #57534e;
+  --neutral-700: #44403c;
+  --neutral-800: #292524;
+  --neutral-900: #1c1917;
+
+  /* Mapeo para aplicar en clases Tailwind personalizadas */
+  --color-primary: var(--primary-600);
+  --color-primary-dark: var(--primary-700);
+  --color-primary-light: var(--primary-300);
+  --color-accent: var(--accent-500);
+  --color-accent-dark: var(--accent-600);
+  --color-accent-light: var(--accent-300);
+}
+
+/* Utilidades de aplicación de tema */
+.bg-primary {
+  background-color: var(--primary-600);
+}
+
+.bg-primary-light {
+  background-color: var(--primary-50);
+}
+
+.bg-accent {
+  background-color: var(--accent-500);
+}
+
+.text-primary {
+  color: var(--primary-600);
+}
+
+.text-accent {
+  color: var(--accent-500);
+}
+
+.border-primary {
+  border-color: var(--primary-600);
+}
+
+.border-accent {
+  border-color: var(--accent-500);
+}
+
+.ring-primary {
+  --tw-ring-color: var(--primary-300);
+}
+
+/* Gradientes temáticos */
+.gradient-primary {
+  background: linear-gradient(135deg, var(--primary-500), var(--secondary-500));
+}
+
+.gradient-accent {
+  background: linear-gradient(135deg, var(--accent-500), var(--accent-600));
+}
+
+.gradient-background {
+  background: linear-gradient(to bottom right, var(--primary-50), var(--secondary-50));
+}

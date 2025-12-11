@@ -401,7 +401,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-teal-50 to-cyan-50">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <header className="relative text-center mb-8">
@@ -421,7 +421,7 @@ function App() {
             Anonimización de PDFs conforme a RGPD by{' '}
             <button
               onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
-              className="text-blue-600 hover:text-blue-700 hover:underline transition-colors cursor-pointer"
+              className="text-teal-600 hover:text-teal-700 hover:underline transition-colors cursor-pointer"
             >
               @TbanR
             </button>
@@ -435,7 +435,7 @@ function App() {
           onDrop={handleDrop}
           className={`border-4 border-dashed rounded-2xl p-12 mb-6 text-center transition-all duration-300 ${
             isDragActive
-              ? 'border-blue-500 glass scale-105 shadow-2xl'
+              ? 'border-teal-500 glass scale-105 shadow-2xl'
               : 'border-gray-300 bg-white shadow-md hover:shadow-lg'
           }`}
         >
@@ -454,7 +454,7 @@ function App() {
               />
             </svg>
             {isDragActive ? (
-              <p className="text-lg font-semibold text-blue-600 mb-3">
+              <p className="text-lg font-semibold text-teal-600 mb-3">
                 Suelta los archivos aquí...
               </p>
             ) : (
@@ -490,9 +490,9 @@ function App() {
                   <div className="flex flex-col items-start">
                     <span className="text-gradient-shift font-bold">Procesando archivos</span>
                     {processingStep && (
-                      <span className="text-sm text-blue-100 flex items-center gap-1">
+                      <span className="text-sm text-teal-100 flex items-center gap-1">
                         {processingStep}
-                        <span className="dots-pulse text-blue-200">
+                        <span className="dots-pulse text-teal-200">
                           <span></span>
                           <span></span>
                           <span></span>
@@ -530,8 +530,8 @@ function App() {
                   key={idx}
                   className={`list-item border-2 rounded-xl p-4 transition-all duration-300 ${
                     file.status === 'processing'
-                      ? 'border-blue-400 bg-blue-50 shadow-xl ring-2 ring-blue-200 scale-[1.02]'
-                      : 'border-gray-200 hover:border-blue-300 shadow-md hover:shadow-xl card-hover bg-white'
+                      ? 'border-teal-400 bg-teal-50 shadow-xl ring-2 ring-teal-200 scale-[1.02]'
+                      : 'border-gray-200 hover:border-teal-300 shadow-md hover:shadow-xl card-hover bg-white'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -548,7 +548,7 @@ function App() {
                         </span>
                       )}
                       {file.status === 'processing' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
                           Procesando...
                         </span>
                       )}
@@ -572,7 +572,7 @@ function App() {
                           <div className="spinner-modern" style={{width: '12px', height: '12px', borderWidth: '2px'}}></div>
                           <span className="font-medium flex items-center gap-1">
                             {processingStep || 'Procesando documento'}
-                            <span className="dots-pulse text-blue-600">
+                            <span className="dots-pulse text-teal-600">
                               <span></span>
                               <span></span>
                               <span></span>
@@ -583,7 +583,7 @@ function App() {
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden shadow-inner">
                         <div
-                          className="bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 h-2.5 rounded-full transition-all duration-500 progress-wave"
+                          className="bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-500 h-2.5 rounded-full transition-all duration-500 progress-wave"
                           style={{
                             width: `${file.progress || 50}%`,
                             backgroundSize: '200% 100%'
@@ -630,14 +630,14 @@ function App() {
                       <button
                         onClick={() => handleStartReview(idx)}
                         disabled={isDetecting === idx}
-                        className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 scale-on-hover disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100 transition-all duration-200 shadow-md hover:shadow-lg"
+                        className="px-3 py-1.5 bg-teal-600 text-white text-xs rounded hover:bg-teal-700 scale-on-hover disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100 transition-all duration-200 shadow-md hover:shadow-lg"
                       >
                         {isDetecting === idx ? (
                           <span className="flex items-center justify-center gap-2">
                             <div className="spinner-modern" style={{width: '14px', height: '14px', borderWidth: '2px'}}></div>
                             <span className="flex items-center gap-1">
                               Detectando PII
-                              <span className="dots-pulse text-blue-200">
+                              <span className="dots-pulse text-teal-200">
                                 <span></span>
                                 <span></span>
                                 <span></span>
@@ -682,13 +682,13 @@ function App() {
         {/* Footer */}
         <footer className="mt-12 text-center text-sm text-gray-500">
           <p>
-            🔒 Procesamiento 100% local • Sin telemetría • Conforme a RGPD
+            Procesamiento 100% local - Sin telemetría - Conforme a RGPD
           </p>
           <p className="mt-2 text-xs">
             v{__APP_VERSION__} · by{' '}
             <button
               onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
-              className="text-blue-600 hover:text-blue-700 hover:underline transition-colors cursor-pointer"
+              className="text-teal-600 hover:text-teal-700 hover:underline transition-colors cursor-pointer"
             >
               @TbanR
             </button>
@@ -708,9 +708,9 @@ function App() {
             }`}>
               <div className="flex items-center justify-between text-white">
                 <h2 className="text-3xl font-bold">
-                  {completionData.type === 'success' && '✓ Proceso Completado'}
-                  {completionData.type === 'partial' && '⚠ Completado con Errores'}
-                  {(completionData.type === 'error' || completionData.type === 'critical') && '✗ Error en el Procesamiento'}
+                  {completionData.type === 'success' && 'Proceso Completado'}
+                  {completionData.type === 'partial' && 'Completado con Errores'}
+                  {(completionData.type === 'error' || completionData.type === 'critical') && 'Error en el Procesamiento'}
                 </h2>
               </div>
             </div>
@@ -741,14 +741,14 @@ function App() {
 
               {/* Mensaje de Éxito */}
               {completionData.type === 'success' && (
-                <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-lg mb-6">
-                  <h3 className="text-lg font-semibold text-blue-900 mb-3">
-                    ⚠️ Revisión Manual Requerida
+                <div className="bg-teal-50 border-l-4 border-teal-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold text-teal-900 mb-3">
+                    Revisión Manual Requerida
                   </h3>
-                  <p className="text-blue-800 leading-relaxed">
+                  <p className="text-teal-800 leading-relaxed">
                     Por favor, <strong>revise manualmente</strong> los archivos anonimizados para verificar que no queden datos personales sin excluir.
                   </p>
-                  <p className="text-blue-800 leading-relaxed mt-2">
+                  <p className="text-teal-800 leading-relaxed mt-2">
                     Es fundamental verificar que toda la información sensible haya sido correctamente anonimizada.
                   </p>
                 </div>
@@ -756,17 +756,17 @@ function App() {
 
               {/* Lista de Advertencias */}
               {completionData.warnings && completionData.warnings.length > 0 && (
-                <div className="bg-orange-50 border-l-4 border-orange-500 p-6 rounded-lg mb-6">
-                  <h3 className="text-lg font-semibold text-orange-900 mb-4">
-                    ⚠️ Advertencias ({completionData.warnings.length})
+                <div className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold text-amber-900 mb-4">
+                    Advertencias ({completionData.warnings.length})
                   </h3>
                   <div className="space-y-3 max-h-60 overflow-y-auto">
                     {completionData.warnings.map((warn, idx) => (
                       <div key={idx} className="bg-white p-4 rounded-lg shadow-sm">
-                        <div className="font-medium text-orange-900 mb-2">{warn.file}</div>
+                        <div className="font-medium text-amber-900 mb-2">{warn.file}</div>
                         <div className="space-y-1">
                           {warn.warnings.map((warning, widx) => (
-                            <div key={widx} className="text-sm text-orange-700">• {warning}</div>
+                            <div key={widx} className="text-sm text-amber-700">{warning}</div>
                           ))}
                         </div>
                       </div>
@@ -777,15 +777,15 @@ function App() {
 
               {/* Lista de Errores */}
               {completionData.errors && completionData.errors.length > 0 && (
-                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg mb-6">
-                  <h3 className="text-lg font-semibold text-red-900 mb-4">
+                <div className="border-l-4 p-6 rounded-lg mb-6" style={{ backgroundColor: '#fff5f3', borderColor: '#FF6B54' }}>
+                  <h3 className="text-lg font-semibold mb-4" style={{ color: '#ba3821' }}>
                     Errores Encontrados ({completionData.errorCount})
                   </h3>
                   <div className="space-y-3 max-h-60 overflow-y-auto">
                     {completionData.errors.map((err, idx) => (
                       <div key={idx} className="bg-white p-4 rounded-lg shadow-sm">
-                        <div className="font-medium text-red-900 mb-1">{err.file}</div>
-                        <div className="text-sm text-red-700">{err.error}</div>
+                        <div className="font-medium mb-1" style={{ color: '#ba3821' }}>{err.file}</div>
+                        <div className="text-sm" style={{ color: '#d14932' }}>{err.error}</div>
                       </div>
                     ))}
                   </div>
@@ -794,17 +794,17 @@ function App() {
 
               {/* Mensaje Crítico */}
               {completionData.type === 'critical' && completionData.message && (
-                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg mb-6">
-                  <h3 className="text-lg font-semibold text-red-900 mb-3">
+                <div className="border-l-4 p-6 rounded-lg mb-6" style={{ backgroundColor: '#fff5f3', borderColor: '#FF6B54' }}>
+                  <h3 className="text-lg font-semibold mb-3" style={{ color: '#ba3821' }}>
                     Error Crítico
                   </h3>
-                  <p className="text-red-800 leading-relaxed mb-3">
+                  <p className="leading-relaxed mb-3" style={{ color: '#d14932' }}>
                     Ocurrió un error inesperado durante el procesamiento:
                   </p>
-                  <code className="block bg-red-100 p-4 rounded text-sm text-red-900">
+                  <code className="block p-4 rounded text-sm" style={{ backgroundColor: '#ffe8e3', color: '#ba3821' }}>
                     {completionData.message}
                   </code>
-                  <p className="text-red-800 leading-relaxed mt-3">
+                  <p className="leading-relaxed mt-3" style={{ color: '#d14932' }}>
                     Por favor, intente nuevamente o contacte soporte técnico.
                   </p>
                 </div>
@@ -815,7 +815,7 @@ function App() {
             <div className="px-8 pb-8">
               <button
                 onClick={() => setShowCompletionModal(false)}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
+                className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
               >
                 Entendido
               </button>
@@ -829,7 +829,7 @@ function App() {
         <div className="modal-backdrop backdrop-blur-strong p-4">
           <div className="modal-content glass rounded-2xl shadow-2xl max-w-lg w-full border-2 border-white/20">
             {/* Header */}
-            <div className="p-8 rounded-t-2xl bg-gradient-to-r from-blue-600 to-indigo-600">
+            <div className="p-8 rounded-t-2xl bg-gradient-to-r from-teal-600 to-cyan-600">
               <div className="text-white text-center">
                 <div className="flex justify-center mb-4">
                   <img
@@ -839,7 +839,7 @@ function App() {
                   />
                 </div>
                 <h2 className="text-3xl font-bold mb-2">AnoniData</h2>
-                <p className="text-blue-100">Anonimización de PDFs conforme a RGPD</p>
+                <p className="text-teal-100">Anonimización de PDFs conforme a RGPD</p>
               </div>
             </div>
 
@@ -864,7 +864,7 @@ function App() {
                     <p className="text-sm text-gray-500 mb-3">Contacto</p>
                     <button
                       onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
-                      className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-2 text-teal-600 hover:text-teal-700 font-medium transition-colors cursor-pointer"
                     >
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
@@ -902,7 +902,7 @@ function App() {
             <div className="px-8 pb-8">
               <button
                 onClick={() => setShowAboutModal(false)}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
+                className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-semibold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
               >
                 Cerrar
               </button>

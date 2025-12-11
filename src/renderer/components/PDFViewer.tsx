@@ -133,7 +133,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         <div className="spinner-rings"></div>
         <div className="flex flex-col items-center gap-2">
           <div className="text-gray-700 text-lg font-semibold">Cargando PDF</div>
-          <div className="dots-pulse text-blue-600">
+          <div className="dots-pulse text-teal-600">
             <span></span>
             <span></span>
             <span></span>
@@ -146,9 +146,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   if (error) {
     return (
       <div className="flex items-center justify-center h-full p-8">
-        <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6 shadow-lg">
-          <div className="text-red-700 font-semibold text-lg mb-2">Error al cargar PDF</div>
-          <div className="text-red-600">{error}</div>
+        <div className="border-2 rounded-lg p-6 shadow-lg" style={{ backgroundColor: '#fff5f3', borderColor: '#FF6B54' }}>
+          <div className="font-semibold text-lg mb-2" style={{ color: '#d14932' }}>Error al cargar PDF</div>
+          <div style={{ color: '#e85a43' }}>{error}</div>
         </div>
       </div>
     )
