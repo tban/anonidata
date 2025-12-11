@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { ProcessResult } from '../preload/preload';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { UpdateNotification } from './components/UpdateNotification';
+import logoImage from './assets/logo.png';
 
 interface FileItem {
   path: string;
@@ -356,26 +357,25 @@ function App() {
         <header className="relative text-center mb-8">
           <button
             onClick={() => setShowAboutModal(true)}
-            className="absolute right-0 top-0 w-8 h-8 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-all"
+            className="absolute right-0 top-0 w-10 h-10 flex items-center justify-center hover:scale-110 transition-transform duration-200 rounded-lg hover:shadow-lg"
             title="Acerca de AnoniData"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={2}
-              stroke="currentColor"
-              className="w-5 h-5"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
-              />
-            </svg>
+            <img
+              src={logoImage}
+              alt="AnoniData Logo"
+              className="w-8 h-8 object-contain"
+            />
           </button>
           <h1 className="text-4xl font-bold text-gray-800 mb-2">AnoniData</h1>
-          <p className="text-gray-600">Anonimización de PDFs conforme a RGPD</p>
+          <p className="text-gray-600">
+            Anonimización de PDFs conforme a RGPD by{' '}
+            <button
+              onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
+              className="text-blue-600 hover:text-blue-700 hover:underline transition-colors cursor-pointer"
+            >
+              @TbanR
+            </button>
+          </p>
         </header>
 
         {/* File Selection Area - Drag & Drop */}
@@ -414,7 +414,7 @@ function App() {
                 </p>
                 <button
                   onClick={handleSelectFiles}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg shadow-md transition-colors mb-3"
+                  className="btn-primary btn-ripple mb-3 animate-fade-in-up"
                 >
                   Seleccionar PDFs
                 </button>
@@ -432,31 +432,12 @@ function App() {
             <button
               onClick={handleProcess}
               disabled={isProcessing || files.every((f) => f.status === 'completed')}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-8 rounded-lg shadow-md transition-colors"
+              className="btn-primary btn-ripple"
             >
               {isProcessing ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg
-                    className="animate-spin h-5 w-5 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Procesando...
+                <span className="flex items-center justify-center gap-3">
+                  <div className="spinner-modern"></div>
+                  <span className="animate-pulse-soft">Procesando archivos...</span>
                 </span>
               ) : (
                 'Anonimizar PDFs'
@@ -485,7 +466,11 @@ function App() {
               {files.map((file, idx) => (
                 <div
                   key={idx}
-                  className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                  className={`list-item border rounded-lg p-4 hover:shadow-lg transition-all duration-200 card-hover ${
+                    file.status === 'processing'
+                      ? 'border-blue-400 bg-blue-50 shadow-md animate-pulse-soft'
+                      : 'border-gray-200 hover:border-blue-300'
+                  }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex-1 min-w-0">
@@ -519,11 +504,23 @@ function App() {
                   </div>
 
                   {file.status === 'processing' && (
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${file.progress}%` }}
-                      />
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-gray-600">
+                        <span className="flex items-center gap-2">
+                          <div className="spinner-modern" style={{width: '12px', height: '12px', borderWidth: '2px'}}></div>
+                          <span className="animate-pulse-soft font-medium">Procesando documento...</span>
+                        </span>
+                        <span className="font-semibold">{file.progress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 h-2 rounded-full transition-all duration-300 animate-shimmer"
+                          style={{
+                            width: `${file.progress}%`,
+                            backgroundSize: '200% 100%'
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -564,9 +561,16 @@ function App() {
                       <button
                         onClick={() => handleStartReview(idx)}
                         disabled={isDetecting === idx}
-                        className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                        className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 hover:scale-105 active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100 transition-all duration-200"
                       >
-                        {isDetecting === idx ? 'Detectando PII...' : 'Revisión manual'}
+                        {isDetecting === idx ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <div className="spinner-modern" style={{width: '14px', height: '14px', borderWidth: '2px'}}></div>
+                            <span className="animate-pulse-soft">Detectando PII...</span>
+                          </span>
+                        ) : (
+                          'Revisión manual'
+                        )}
                       </button>
                     </div>
                   )}
@@ -605,15 +609,21 @@ function App() {
             🔒 Procesamiento 100% local • Sin telemetría • Conforme a RGPD
           </p>
           <p className="mt-2 text-xs">
-            v{__APP_VERSION__}
+            v{__APP_VERSION__} · by{' '}
+            <button
+              onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
+              className="text-blue-600 hover:text-blue-700 hover:underline transition-colors cursor-pointer"
+            >
+              @TbanR
+            </button>
           </p>
         </footer>
       </div>
 
       {/* Modal de Completación */}
       {showCompletionModal && completionData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="modal-backdrop p-4">
+          <div className="modal-content bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className={`p-8 rounded-t-2xl ${
               completionData.type === 'success' ? 'bg-gradient-to-r from-green-500 to-green-600' :
@@ -740,11 +750,18 @@ function App() {
 
       {/* Modal About AnoniData */}
       {showAboutModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+        <div className="modal-backdrop p-4">
+          <div className="modal-content bg-white rounded-2xl shadow-2xl max-w-lg w-full">
             {/* Header */}
             <div className="p-8 rounded-t-2xl bg-gradient-to-r from-blue-600 to-indigo-600">
               <div className="text-white text-center">
+                <div className="flex justify-center mb-4">
+                  <img
+                    src={logoImage}
+                    alt="AnoniData Logo"
+                    className="w-20 h-20 object-contain"
+                  />
+                </div>
                 <h2 className="text-3xl font-bold mb-2">AnoniData</h2>
                 <p className="text-blue-100">Anonimización de PDFs conforme a RGPD</p>
               </div>
