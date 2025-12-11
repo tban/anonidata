@@ -20,7 +20,7 @@ module.exports = {
       /\.spec$/ // Excluir archivos .spec
     ],
     extraResource: [
-      'backend/dist/anonidata-backend'
+      'dist/anonidata-backend'
     ],
   },
   rebuildConfig: {},
