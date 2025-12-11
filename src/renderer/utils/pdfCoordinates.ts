@@ -17,6 +17,121 @@ export interface ScreenRect {
 }
 
 /**
+ * Transforma coordenadas de canvas rotado a PDF original (sin rotar)
+ *
+ * @param bbox - BBox en coordenadas del canvas rotado (donde dibuja el usuario)
+ * @param rotation - Rotación de la página en grados (0, 90, 180, 270)
+ * @param pageWidth - Ancho de la página PDF original (sin rotar)
+ * @param pageHeight - Alto de la página PDF original (sin rotar)
+ * @returns BBox en coordenadas del PDF original (para PyMuPDF)
+ */
+export function rotatedToPdfCoordinates(
+  bbox: PDFBBox,
+  rotation: number,
+  pageWidth: number,
+  pageHeight: number
+): PDFBBox {
+  // Normalizar rotación a 0, 90, 180, 270
+  const normalizedRotation = ((rotation % 360) + 360) % 360
+
+  switch (normalizedRotation) {
+    case 0:
+      // Sin rotación, devolver coordenadas sin cambios
+      return bbox
+
+    case 90:
+      // Rotación 90° CW: Canvas tiene dimensiones (H, W)
+      // Canvas (cx, cy) → PDF (H - cy, cx)
+      return {
+        x0: pageHeight - bbox.y1,
+        y0: bbox.x0,
+        x1: pageHeight - bbox.y0,
+        y1: bbox.x1
+      }
+
+    case 180:
+      // Rotación 180°: Canvas tiene dimensiones (W, H)
+      // Canvas (cx, cy) → PDF (W - cx, H - cy)
+      return {
+        x0: pageWidth - bbox.x1,
+        y0: pageHeight - bbox.y1,
+        x1: pageWidth - bbox.x0,
+        y1: pageHeight - bbox.y0
+      }
+
+    case 270:
+      // Rotación 270° CW (= 90° CCW): Canvas tiene dimensiones (H, W)
+      // Canvas (cx, cy) → PDF (cy, W - cx)
+      return {
+        x0: bbox.y0,
+        y0: pageWidth - bbox.x1,
+        x1: bbox.y1,
+        y1: pageWidth - bbox.x0
+      }
+
+    default:
+      console.warn(`Rotación no soportada: ${rotation}°. Usando coordenadas sin transformar.`)
+      return bbox
+  }
+}
+
+/**
+ * Transforma coordenadas de PDF original a canvas rotado (para mostrar)
+ *
+ * @param bbox - BBox en coordenadas del PDF original (de PyMuPDF)
+ * @param rotation - Rotación de la página en grados (0, 90, 180, 270)
+ * @param pageWidth - Ancho de la página PDF original (sin rotar)
+ * @param pageHeight - Alto de la página PDF original (sin rotar)
+ * @returns BBox en coordenadas del canvas rotado (para mostrar al usuario)
+ */
+export function pdfToRotatedCoordinates(
+  bbox: PDFBBox,
+  rotation: number,
+  pageWidth: number,
+  pageHeight: number
+): PDFBBox {
+  // Normalizar rotación a 0, 90, 180, 270
+  const normalizedRotation = ((rotation % 360) + 360) % 360
+
+  switch (normalizedRotation) {
+    case 0:
+      // Sin rotación, devolver coordenadas sin cambios
+      return bbox
+
+    case 90:
+      // Rotación 90° CW: PDF (px, py) → Canvas (py, H - px)
+      return {
+        x0: bbox.y0,
+        y0: pageHeight - bbox.x1,
+        x1: bbox.y1,
+        y1: pageHeight - bbox.x0
+      }
+
+    case 180:
+      // Rotación 180°: PDF (px, py) → Canvas (W - px, H - py)
+      return {
+        x0: pageWidth - bbox.x1,
+        y0: pageHeight - bbox.y1,
+        x1: pageWidth - bbox.x0,
+        y1: pageHeight - bbox.y0
+      }
+
+    case 270:
+      // Rotación 270° CW: PDF (px, py) → Canvas (W - py, px)
+      return {
+        x0: pageWidth - bbox.y1,
+        y0: bbox.x0,
+        x1: pageWidth - bbox.y0,
+        y1: bbox.x1
+      }
+
+    default:
+      console.warn(`Rotación no soportada: ${rotation}°. Usando coordenadas sin transformar.`)
+      return bbox
+  }
+}
+
+/**
  * Convierte coordenadas PDF a coordenadas de pantalla con escala
  *
  * IMPORTANTE: PyMuPDF y PDF.js usan el MISMO sistema de coordenadas:

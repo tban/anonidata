@@ -88,3 +88,110 @@ Verifica que el rectángulo esté efectivamente centrado.
 ## Resultado Esperado
 
 Con los logs, podremos identificar exactamente dónde está el problema en la transformación de coordenadas.
+
+---
+
+## ACTUALIZACIÓN - Diagnóstico de Rotación
+
+### Hallazgos Previos
+
+1. ✅ **PyMuPDF dibuja correctamente**: El test `test_transformation.py` confirmó que el rectángulo ROJO (coordenadas directas) aparece en la ubicación correcta
+2. ✅ **El problema está en el frontend**: La conversión de coordenadas entre pantalla y PDF tiene algún problema
+3. ⚠️ **Síntoma**: Los rectángulos aparecen "girados a la izquierda" (rotación de 90°), NO solo desplazados
+
+### Nueva Hipótesis: Rotación de Página
+
+Si el PDF tiene metadatos de rotación (común en escaneos), las coordenadas necesitan transformarse según la rotación:
+
+- **Rotación 0°**: Sin transformación (x, y) → (x, y)
+- **Rotación 90°**: (x, y) → (y, pageWidth - x)
+- **Rotación 180°**: (x, y) → (pageWidth - x, pageHeight - y)
+- **Rotación 270°**: (x, y) → (pageHeight - y, x)
+
+### Nuevos Logs Agregados
+
+Ahora la aplicación en modo desarrollo muestra:
+
+#### 1. Información de Rotación (PDFViewer.tsx)
+```
+=== PDF.js PAGE INFO ===
+Page number: 1
+Rotation: 90 degrees  ← ¡IMPORTANTE!
+Original dimensions: { width: XXX, height: XXX }
+Scaled dimensions: { width: XXX, height: XXX }
+Scale: 1.5
+========================
+```
+
+#### 2. Coordenadas de Selección Manual (SelectionOverlay.tsx)
+```
+=== SELECCIÓN MANUAL ===
+Canvas dimensions: { width: XXX, height: XXX }
+PDF page height: XXX
+Scale: XXX
+Screen rect: { x: XXX, y: XXX, width: XXX, height: XXX }
+PDF bbox: { x0: XXX, y0: XXX, x1: XXX, y1: XXX }
+Final bbox array: [XXX, XXX, XXX, XXX]
+=======================
+```
+
+#### 3. Coordenadas al Mostrar (DetectionOverlay.tsx)
+```
+=== DETECCIÓN MANUAL - DISPLAY ===
+Detection index: X
+PDF bbox from detection: { x0: XXX, y0: XXX, x1: XXX, y1: XXX }
+Screen rect after pdfToScreen: { x: XXX, y: XXX, width: XXX, height: XXX }
+PDF page height: XXX
+Scale: XXX
+==================================
+```
+
+### Pasos de Diagnóstico Actualizados
+
+1. **Ejecutar en modo desarrollo**: `npm run dev`
+2. **Cargar PDF con imagen**: Usar `test/pdfs/testpdfimagen.pdf`
+3. **Ir a "Revisión manual"**
+4. **Verificar rotación en logs**: Buscar "=== PDF.js PAGE INFO ===" y anotar el valor de "Rotation"
+5. **Dibujar un rectángulo** en una ubicación conocida (ej: esquina superior izquierda)
+6. **Capturar TODOS los logs**:
+   - Selección (cuando dibujas)
+   - Display (cuando se muestra el rectángulo)
+7. **Comparar**:
+   - ¿Las coordenadas "PDF bbox" de selección coinciden con "PDF bbox" al mostrar?
+   - ¿El "Screen rect" al mostrar coincide con el "Screen rect" original?
+   - ¿Hay rotación de página (≠ 0°)?
+
+### Información a Proporcionar
+
+Por favor copia y pega:
+
+1. **Log completo de PDF.js PAGE INFO** (especialmente la rotación)
+2. **Log de SELECCIÓN MANUAL** (cuando dibujaste el rectángulo)
+3. **Log de DETECCIÓN MANUAL - DISPLAY** (cuando se muestra)
+4. **Descripción**:
+   - Dónde dibujaste el rectángulo (ej: "esquina superior izquierda, 100px desde arriba y desde la izquierda")
+   - Dónde apareció el rectángulo (ej: "esquina inferior derecha, girado 90°")
+
+### Posible Solución
+
+Si la página tiene rotación ≠ 0°, necesitamos:
+
+1. **Capturar la rotación** en `onPageRendered` callback
+2. **Pasar la rotación** a `SelectionOverlay` y `DetectionOverlay`
+3. **Transformar coordenadas** según la rotación en `pdfCoordinates.ts`
+
+Ejemplo de transformación para rotación 90°:
+```typescript
+function rotateCoordinates(bbox: PDFBBox, rotation: number, pageWidth: number, pageHeight: number): PDFBBox {
+  if (rotation === 90) {
+    return {
+      x0: bbox.y0,
+      y0: pageWidth - bbox.x1,
+      x1: bbox.y1,
+      y1: pageWidth - bbox.x0
+    }
+  }
+  // ... otros casos
+  return bbox
+}
+```

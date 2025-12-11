@@ -27,8 +27,10 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   const [totalPages, setTotalPages] = useState(0)
   const [scale, setScale] = useState(1.5)
   const [pdfPageHeight, setPdfPageHeight] = useState(0)
+  const [pdfPageWidth, setPdfPageWidth] = useState(0)
   const [canvasWidth, setCanvasWidth] = useState(0)
   const [canvasHeight, setCanvasHeight] = useState(0)
+  const [pageRotation, setPageRotation] = useState(0)
   const [hoveredDetectionIndex, setHoveredDetectionIndex] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [overlayVersion, setOverlayVersion] = useState(0)
@@ -96,13 +98,17 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
     pageNum: number
     originalWidth: number
     originalHeight: number
+    rotation: number
   }) => {
     setPdfPageHeight(pageInfo.originalHeight)
+    setPdfPageWidth(pageInfo.originalWidth)
     setCanvasWidth(pageInfo.width)
     setCanvasHeight(pageInfo.height)
+    setPageRotation(pageInfo.rotation)
     console.log('PDF Page dimensions:', {
       original: { width: pageInfo.originalWidth, height: pageInfo.originalHeight },
       scaled: { width: pageInfo.width, height: pageInfo.height },
+      rotation: pageInfo.rotation,
       scale: scale
     })
   }
@@ -469,6 +475,8 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
                   canvasWidth={canvasWidth}
                   canvasHeight={canvasHeight}
                   pdfPageHeight={pdfPageHeight}
+                  pdfPageWidth={pdfPageWidth}
+                  pageRotation={pageRotation}
                   scale={scale}
                   onAddManualDetection={handleAddManualDetection}
                 />
@@ -479,6 +487,8 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
                 detections={enrichedDetections}
                 currentPage={currentPage}
                 pdfPageHeight={pdfPageHeight}
+                pdfPageWidth={pdfPageWidth}
+                pageRotation={pageRotation}
                 scale={scale}
                 canvasWidth={canvasWidth}
                 canvasHeight={canvasHeight}

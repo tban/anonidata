@@ -1,10 +1,12 @@
 import React, { useState, useRef, useCallback } from 'react'
-import { screenToPdf, ScreenRect } from '../utils/pdfCoordinates'
+import { screenToPdf, rotatedToPdfCoordinates, ScreenRect } from '../utils/pdfCoordinates'
 
 interface SelectionOverlayProps {
   canvasWidth: number
   canvasHeight: number
   pdfPageHeight: number
+  pdfPageWidth: number
+  pageRotation: number
   scale: number
   onAddManualDetection: (bbox: [number, number, number, number]) => void
 }
@@ -13,6 +15,8 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
   canvasWidth,
   canvasHeight,
   pdfPageHeight,
+  pdfPageWidth,
+  pageRotation,
   scale,
   onAddManualDetection
 }) => {
@@ -79,9 +83,18 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
       height
     }
 
-    const pdfBBox = screenToPdf(screenRect, pdfPageHeight, scale)
+    // Convertir de pantalla a coordenadas del canvas (solo desescalar)
+    const canvasBBox = screenToPdf(screenRect, pdfPageHeight, scale)
 
-    // Crear bbox en formato [x0, y0, x1, y1]
+    // Rotar 90° CW (sentido horario) para PDFs con imágenes
+    // Esto corrige que aparezcan en vertical
+    const pdfBBox = {
+      x0: pdfPageHeight - canvasBBox.y1,
+      y0: canvasBBox.x0,
+      x1: pdfPageHeight - canvasBBox.y0,
+      y1: canvasBBox.x1
+    }
+
     const bbox: [number, number, number, number] = [
       pdfBBox.x0,
       pdfBBox.y0,
@@ -92,10 +105,11 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
     // DEBUG: Log detallado de la conversión de coordenadas
     console.log('=== SELECCIÓN MANUAL ===')
     console.log('Canvas dimensions:', { width: canvasWidth, height: canvasHeight })
-    console.log('PDF page height:', pdfPageHeight)
+    console.log('PDF page dimensions (original):', { width: pdfPageWidth, height: pdfPageHeight })
     console.log('Scale:', scale)
     console.log('Screen rect:', screenRect)
-    console.log('PDF bbox:', pdfBBox)
+    console.log('Canvas bbox (desescalado):', canvasBBox)
+    console.log('PDF bbox (rotado 90° CW):', pdfBBox)
     console.log('Final bbox array:', bbox)
     console.log('=======================')
 
@@ -106,7 +120,7 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
     setIsDrawing(false)
     setStartPoint(null)
     setCurrentPoint(null)
-  }, [isDrawing, startPoint, getMousePosition, pdfPageHeight, scale, onAddManualDetection])
+  }, [isDrawing, startPoint, getMousePosition, pdfPageHeight, pdfPageWidth, pageRotation, scale, onAddManualDetection, canvasWidth, canvasHeight])
 
   const handleMouseLeave = useCallback(() => {
     // Si el usuario sale del área mientras dibuja, cancelar la selección

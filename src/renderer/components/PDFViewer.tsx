@@ -17,6 +17,7 @@ interface PDFViewerProps {
     pageNum: number
     originalWidth: number
     originalHeight: number
+    rotation: number
   }) => void
   onDocumentLoaded?: (doc: PDFDocumentProxy) => void
 }
@@ -96,6 +97,15 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         canvas.height = viewport.height
         canvas.width = viewport.width
 
+        // DEBUG: Log page rotation information
+        console.log('=== PDF.js PAGE INFO ===')
+        console.log('Page number:', pageNumber)
+        console.log('Rotation:', page.rotate, 'degrees')
+        console.log('Original dimensions:', { width: originalViewport.width, height: originalViewport.height })
+        console.log('Scaled dimensions:', { width: viewport.width, height: viewport.height })
+        console.log('Scale:', scale)
+        console.log('========================')
+
         const renderContext = {
           canvasContext: context,
           viewport: viewport
@@ -109,7 +119,8 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
             height: viewport.height,
             pageNum: pageNumber,
             originalWidth: originalViewport.width,
-            originalHeight: originalViewport.height
+            originalHeight: originalViewport.height,
+            rotation: page.rotate
           })
         }
       } catch (err) {

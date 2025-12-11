@@ -1,11 +1,13 @@
 import React, { useMemo } from 'react'
 import { Detection, getDetectionColor } from '../types/detection'
-import { pdfToScreen, PDFBBox, ScreenRect } from '../utils/pdfCoordinates'
+import { pdfToScreen, pdfToRotatedCoordinates, PDFBBox, ScreenRect } from '../utils/pdfCoordinates'
 
 interface DetectionOverlayProps {
   detections: Detection[]
   currentPage: number
   pdfPageHeight: number
+  pdfPageWidth: number
+  pageRotation: number
   scale: number
   canvasWidth: number
   canvasHeight: number
@@ -19,6 +21,8 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
   detections,
   currentPage,
   pdfPageHeight,
+  pdfPageWidth,
+  pageRotation,
   scale,
   canvasWidth,
   canvasHeight,
@@ -49,6 +53,7 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
       }}
     >
       {pageDetections.map((detection) => {
+        // Coordenadas del PDF guardadas
         const pdfBBox: PDFBBox = {
           x0: detection.bbox[0],
           y0: detection.bbox[1],
@@ -56,7 +61,19 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
           y1: detection.bbox[3]
         }
 
+        // Convertir directamente a coordenadas de pantalla (solo escalar)
         const screenRect: ScreenRect = pdfToScreen(pdfBBox, pdfPageHeight, scale)
+
+        // DEBUG: Log coordinate transformation for manual vs automatic detections
+        if (detection.source === 'manual') {
+          console.log('=== DETECCIÓN MANUAL - DISPLAY ===')
+          console.log('Detection index:', detection.index)
+          console.log('PDF bbox:', pdfBBox)
+          console.log('Screen rect:', screenRect)
+          console.log('PDF page dimensions:', { width: pdfPageWidth, height: pdfPageHeight })
+          console.log('Scale:', scale)
+          console.log('==================================')
+        }
 
         // Usar los campos directos del objeto en lugar de los Sets
         const isApproved = detection.isApproved || approvedIndices.has(detection.index)
