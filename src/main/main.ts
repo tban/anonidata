@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, nativeImage } = require('electron');
 const path = require('path');
 const log = require('electron-log');
 const Store = require('electron-store');
@@ -51,6 +51,9 @@ function createWindow() {
     },
     title: 'AnoniData',
     show: false,
+    icon: isDev
+      ? path.join(app.getAppPath(), 'build/icon.icns')
+      : path.join((process as any).resourcesPath, '../icon.icns'),
   });
 
   // Cargar la app
@@ -63,6 +66,28 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     if (mainWindow) mainWindow.show();
+
+    // Configurar icono del Dock en macOS después de que la ventana esté lista
+    if (process.platform === 'darwin' && app.dock) {
+      // Usar PNG en desarrollo ya que es más compatible con nativeImage
+      const iconPath = isDev
+        ? path.join(__dirname, '../../build/icon.png')
+        : path.join((process as any).resourcesPath, '../icon.icns');
+
+      log.info(`Intentando cargar icono del Dock desde: ${iconPath}`);
+
+      try {
+        const iconImage = nativeImage.createFromPath(iconPath);
+        if (!iconImage.isEmpty()) {
+          app.dock.setIcon(iconImage);
+          log.info(`✓ Icono del Dock configurado correctamente`);
+        } else {
+          log.error(`Error: nativeImage está vacío para: ${iconPath}`);
+        }
+      } catch (error) {
+        log.error('Error configurando icono del Dock:', error);
+      }
+    }
   });
 
   mainWindow.on('close', () => {
@@ -470,6 +495,19 @@ app.on('ready', () => {
     } catch (error: any) {
       log.error(`Error eliminando archivo ${filePath}:`, error.message);
       return false;
+    }
+  });
+
+  ipcMain.handle('utils:readPdfFile', async (_event: any, filePath: string) => {
+    const fs = require('fs').promises;
+    try {
+      log.info(`Leyendo archivo PDF: ${filePath}`);
+      const buffer = await fs.readFile(filePath);
+      // Convertir Buffer de Node.js a ArrayBuffer para el renderer
+      return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    } catch (error: any) {
+      log.error(`Error leyendo archivo PDF ${filePath}:`, error.message);
+      throw error;
     }
   });
 
