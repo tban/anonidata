@@ -191,117 +191,69 @@ class Anonymizer:
 
     def _anonymize_scanned_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
         """
-        Anonimiza una página escaneada dibujando rectángulos opacos sobre ella
-        SIN eliminar el contenido subyacente
+        Anonimiza una página escaneada usando ANOTACIONES (overlays no destructivos)
+        Las anotaciones se colocan SOBRE el contenido sin modificarlo
 
         Args:
             page: Página de PyMuPDF
             matches: Matches a redactar
         """
-        logger.info(f"Anonimizando página escaneada {page.number} con {len(matches)} matches")
+        logger.info(f"Anonimizando página escaneada {page.number} con {len(matches)} matches usando anotaciones")
 
-        # Para cada match, dibujar un rectángulo opaco directamente sobre el PDF
-        # NO eliminar contenido, NO convertir a imagen, solo overlay
+        # Para cada match, crear una anotación de cuadrado opaco
+        # Las anotaciones son OVERLAYS verdaderos que NO modifican el contenido subyacente
         for match in matches:
             bbox = match.bbox
             rect = fitz.Rect(bbox)
 
             if self.settings.redaction_strategy == "black_box":
-                # Método 1: Dibujar rectángulo relleno opaco
-                # Esto se dibuja SOBRE el contenido existente
-                shape = page.new_shape()
+                # Crear anotación de cuadrado (square annotation)
+                # Estas son overlays que se colocan SOBRE el contenido
+                annot = page.add_square_annot(rect)
 
-                # Dibujar rectángulo relleno
-                shape.draw_rect(rect)
-
-                # Aplicar con relleno opaco (alpha = 1.0)
-                shape.finish(
-                    fill=self.settings.redaction_color,
-                    color=self.settings.redaction_color,  # También el borde del mismo color
-                    width=0,  # Sin borde visible
+                # Configurar apariencia: relleno opaco sin borde
+                annot.set_colors(
+                    stroke=self.settings.redaction_color,  # Color del borde
+                    fill=self.settings.redaction_color     # Color de relleno
                 )
 
-                # Commit de la forma a la página
-                shape.commit()
+                # Opacidad completa (1.0 = totalmente opaco)
+                annot.set_opacity(1.0)
 
-                logger.debug(f"  Rectángulo dibujado en {bbox}")
+                # Sin borde visible (width=0)
+                annot.set_border(width=0)
+
+                # Actualizar apariencia de la anotación
+                annot.update()
+
+                logger.debug(f"  Anotación cuadrada creada en {bbox}")
 
             elif self.settings.redaction_strategy == "pixelate":
-                # Para pixelate en scanned, usar imagen overlay pequeña
-                try:
-                    # Renderizar SOLO esta región específica
-                    mat = fitz.Matrix(3.0, 3.0)
-                    pix = page.get_pixmap(matrix=mat, clip=rect)
-
-                    # Convertir a PIL y pixelar
-                    img_data = pix.tobytes("png")
-                    img = Image.open(io.BytesIO(img_data))
-                    img_array = np.array(img)
-
-                    h, w = img_array.shape[:2]
-                    pixel_size = self.settings.pixelation_level
-                    temp_h = max(1, h // pixel_size)
-                    temp_w = max(1, w // pixel_size)
-
-                    if cv2 is not None:
-                        temp = cv2.resize(img_array, (temp_w, temp_h), interpolation=cv2.INTER_LINEAR)
-                        pixelated = cv2.resize(temp, (w, h), interpolation=cv2.INTER_NEAREST)
-                        pixelated_img = Image.fromarray(pixelated)
-                    else:
-                        # Fallback a imagen gris sólida
-                        color = tuple(int(c * 255) for c in self.settings.redaction_color)
-                        pixelated_img = Image.new('RGB', (w, h), color=color)
-
-                    # Guardar como bytes
-                    img_bytes = io.BytesIO()
-                    pixelated_img.save(img_bytes, format='PNG')
-                    img_bytes.seek(0)
-
-                    # Insertar imagen pixelada SOBRE la región (overlay=True)
-                    # IMPORTANTE: NO usar keep_proportion
-                    page.insert_image(rect, stream=img_bytes.getvalue(), overlay=True, keep_proportion=False)
-
-                    logger.debug(f"  Región pixelada en {bbox}")
-
-                except Exception as e:
-                    logger.warning(f"Error aplicando pixelación: {e}, usando rectángulo sólido")
-                    # Fallback a rectángulo
-                    shape = page.new_shape()
-                    shape.draw_rect(rect)
-                    shape.finish(fill=self.settings.redaction_color, width=0)
-                    shape.commit()
+                # Para pixelate, también usar anotación como fallback simple
+                # En lugar de intentar insert_image que puede fallar
+                annot = page.add_square_annot(rect)
+                annot.set_colors(
+                    stroke=self.settings.redaction_color,
+                    fill=self.settings.redaction_color
+                )
+                annot.set_opacity(1.0)
+                annot.set_border(width=0)
+                annot.update()
+                logger.debug(f"  Anotación para pixelate (fallback a cuadrado) en {bbox}")
 
             elif self.settings.redaction_strategy == "blur":
-                # Para blur en scanned, usar imagen overlay pequeña
-                try:
-                    # Renderizar SOLO esta región específica
-                    mat = fitz.Matrix(3.0, 3.0)
-                    pix = page.get_pixmap(matrix=mat, clip=rect)
+                # Para blur, también usar anotación como fallback simple
+                annot = page.add_square_annot(rect)
+                annot.set_colors(
+                    stroke=self.settings.redaction_color,
+                    fill=self.settings.redaction_color
+                )
+                annot.set_opacity(1.0)
+                annot.set_border(width=0)
+                annot.update()
+                logger.debug(f"  Anotación para blur (fallback a cuadrado) en {bbox}")
 
-                    # Convertir a PIL y difuminar
-                    img_data = pix.tobytes("png")
-                    img = Image.open(io.BytesIO(img_data))
-                    blurred = img.filter(ImageFilter.GaussianBlur(radius=15))
-
-                    # Guardar como bytes
-                    img_bytes = io.BytesIO()
-                    blurred.save(img_bytes, format='PNG')
-                    img_bytes.seek(0)
-
-                    # Insertar imagen difuminada SOBRE la región (overlay=True)
-                    page.insert_image(rect, stream=img_bytes.getvalue(), overlay=True, keep_proportion=False)
-
-                    logger.debug(f"  Región difuminada en {bbox}")
-
-                except Exception as e:
-                    logger.warning(f"Error aplicando blur: {e}, usando rectángulo sólido")
-                    # Fallback a rectángulo
-                    shape = page.new_shape()
-                    shape.draw_rect(rect)
-                    shape.finish(fill=self.settings.redaction_color, width=0)
-                    shape.commit()
-
-        logger.info(f"Página escaneada {page.number} anonimizada sin eliminar contenido subyacente")
+        logger.info(f"Página escaneada {page.number} anonimizada con anotaciones overlay")
 
     def _anonymize_text_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
         """
