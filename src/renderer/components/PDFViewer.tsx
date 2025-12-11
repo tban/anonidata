@@ -43,14 +43,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
         setLoading(true)
         setError(null)
 
-        // Convertir path a URL file:// para Electron
-        let pdfUrl = pdfPath
-        if (!pdfPath.startsWith('http') && !pdfPath.startsWith('file://')) {
-          pdfUrl = `file://${pdfPath}`
-        }
+        console.log('Loading PDF from:', pdfPath)
 
-        console.log('Loading PDF from:', pdfUrl)
-        const loadingTask = pdfjsLib.getDocument(pdfUrl)
+        // Leer el archivo usando el handler IPC de Electron
+        // Esto es más seguro que fetch() con file:// URLs
+        const arrayBuffer = await window.anonidata.utils.readPdfFile(pdfPath)
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
         const doc = await loadingTask.promise
 
         if (!cancelled) {
@@ -131,25 +129,36 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-gray-600">Cargando PDF...</div>
+      <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+        <div className="spinner-rings"></div>
+        <div className="flex flex-col items-center gap-2">
+          <div className="text-gray-700 text-lg font-semibold">Cargando PDF</div>
+          <div className="dots-pulse text-blue-600">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-red-600">{error}</div>
+      <div className="flex items-center justify-center h-full p-8">
+        <div className="bg-red-50 border-2 border-red-300 rounded-lg p-6 shadow-lg">
+          <div className="text-red-700 font-semibold text-lg mb-2">Error al cargar PDF</div>
+          <div className="text-red-600">{error}</div>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="relative">
-      <canvas ref={canvasRef} className="border border-gray-300" />
+      <canvas ref={canvasRef} className="border-2 border-gray-300 rounded-lg shadow-xl" />
       {numPages > 1 && (
-        <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white px-3 py-1 rounded text-sm">
+        <div className="absolute bottom-3 right-3 glass-dark text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-lg backdrop-blur-md">
           Página {pageNumber} de {numPages}
         </div>
       )}

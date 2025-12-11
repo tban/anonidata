@@ -33,6 +33,8 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   const [loading, setLoading] = useState(true)
   const [overlayVersion, setOverlayVersion] = useState(0)
   const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [loadingStep, setLoadingStep] = useState('Cargando detecciones')
+  const viewerContainerRef = React.useRef<HTMLDivElement>(null)
 
   // Enriquecer detecciones con estado usando useMemo
   const enrichedDetections = React.useMemo(() => {
@@ -48,7 +50,26 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
     const loadDetections = async () => {
       try {
         setLoading(true)
+
+        // Simular pasos de carga para mejor UX
+        const steps = [
+          'Cargando detecciones',
+          'Analizando documento',
+          'Preparando visor'
+        ]
+
+        let stepIndex = 0
+        const stepInterval = setInterval(() => {
+          if (stepIndex < steps.length) {
+            setLoadingStep(steps[stepIndex])
+            stepIndex++
+          }
+        }, 800)
+
         const result = await window.anonidata.review.loadDetections(detectionsPath)
+
+        clearInterval(stepInterval)
+
         if (result.success && result.detections) {
           setDetections(result.detections)
         } else {
@@ -58,6 +79,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
         console.error('Error cargando detecciones:', error)
       } finally {
         setLoading(false)
+        setLoadingStep('Cargando detecciones')
       }
     }
 
@@ -79,6 +101,26 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
       scaled: { width: pageInfo.width, height: pageInfo.height },
       scale: scale
     })
+  }
+
+  const handleFitToPage = () => {
+    if (!viewerContainerRef.current || !canvasWidth || !canvasHeight) return
+
+    const container = viewerContainerRef.current
+    const containerWidth = container.clientWidth - 64 // Restar padding (32px cada lado)
+    const containerHeight = container.clientHeight - 64
+
+    // Calcular dimensiones originales del PDF
+    const originalWidth = canvasWidth / scale
+    const originalHeight = canvasHeight / scale
+
+    // Calcular escalas necesarias para ajustar
+    const scaleX = containerWidth / originalWidth
+    const scaleY = containerHeight / originalHeight
+
+    // Usar la escala menor para que quepa completo
+    const newScale = Math.min(scaleX, scaleY, 3) // Máximo 300%
+    setScale(Math.max(0.5, newScale)) // Mínimo 50%
   }
 
   const handleDocumentLoaded = (doc: PDFDocumentProxy) => {
@@ -189,9 +231,9 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   console.log('ReviewScreen - Tipos:', currentPageDetections.map(d => `${d.type} (${d.text.substring(0, 20)}...)`))
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
       {/* Sidebar */}
-      <div className="w-80 bg-white shadow-lg flex flex-col">
+      <div className="w-80 glass border-r border-gray-200/50 shadow-2xl flex flex-col">
         {/* Header */}
         <div className="p-4 border-b">
           <h2 className="text-lg font-semibold mb-2">Revisión de Anonimización</h2>
@@ -228,13 +270,13 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
         <div className="p-4 border-b flex gap-2">
           <button
             onClick={handleApproveAll}
-            className="flex-1 px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+            className="flex-1 btn-danger text-sm py-2 scale-on-hover"
           >
             Anonimizar Todas
           </button>
           <button
             onClick={handleRejectAll}
-            className="flex-1 px-3 py-2 bg-orange-600 text-white text-sm rounded hover:bg-orange-700"
+            className="flex-1 px-3 py-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white text-sm rounded hover:from-orange-700 hover:to-orange-800 shadow-md hover:shadow-lg scale-on-hover transition-all duration-200"
           >
             Mantener Todas
           </button>
@@ -259,14 +301,14 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
                 return (
                   <div
                     key={detection.index}
-                    className={`p-3 rounded border-2 cursor-pointer transition-all ${
-                      isHovered ? 'ring-2 ring-blue-400' : ''
+                    className={`p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 scale-on-hover ${
+                      isHovered ? 'ring-2 ring-blue-400 shadow-lg' : 'shadow-md'
                     } ${
                       isApproved
                         ? 'bg-red-50 border-red-300'
                         : isRejected
                         ? 'bg-orange-50 border-orange-300'
-                        : 'bg-white border-gray-300 hover:border-gray-400'
+                        : 'bg-white border-gray-300 hover:border-gray-400 hover:shadow-xl'
                     }`}
                     onClick={() => handleDetectionClick(detection.index)}
                   >
@@ -298,17 +340,17 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
         </div>
 
         {/* Botones de acción */}
-        <div className="p-4 border-t bg-white space-y-2">
+        <div className="p-4 border-t glass-dark backdrop-blur-lg space-y-2">
           <button
             onClick={handleFinish}
             disabled={approvedIndices.size === 0}
-            className="w-full px-4 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-semibold"
+            className="w-full btn-primary focus-ring scale-on-hover"
           >
             Finalizar ({approvedIndices.size} para anonimizar)
           </button>
           <button
             onClick={onCancel}
-            className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+            className="w-full btn-secondary focus-ring scale-on-hover"
           >
             Cancelar
           </button>
@@ -318,23 +360,23 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
       {/* Viewer */}
       <div className="flex-1 flex flex-col">
         {/* Toolbar */}
-        <div className="bg-white shadow-sm p-4 flex items-center justify-between">
+        <div className="glass border-b border-gray-200/50 shadow-lg p-4 flex items-center justify-between">
           {/* Controles de página */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
-              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed scale-on-hover shadow-md transition-all"
             >
               ← Anterior
             </button>
-            <span className="text-sm text-gray-700">
+            <span className="text-sm font-semibold text-gray-700 px-3 py-2 bg-white rounded-lg shadow-md">
               Página {currentPage} de {totalPages}
             </span>
             <button
               onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
-              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed scale-on-hover shadow-md transition-all"
             >
               Siguiente →
             </button>
@@ -344,9 +386,9 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsSelectionMode(!isSelectionMode)}
-              className={`px-4 py-2 rounded transition-colors ${
+              className={`px-4 py-2 rounded-lg shadow-md scale-on-hover transition-all ${
                 isSelectionMode
-                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  ? 'bg-amber-600 text-white hover:bg-amber-700 ring-2 ring-amber-300'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
@@ -358,27 +400,53 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setScale(Math.max(0.5, scale - 0.25))}
-              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              className="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 scale-on-hover shadow-md"
             >
               -
             </button>
-            <span className="text-sm text-gray-700 w-16 text-center">
+            <span className="text-sm font-semibold text-gray-700 w-16 text-center px-3 py-2 bg-white rounded-lg shadow-md">
               {(scale * 100).toFixed(0)}%
             </span>
             <button
               onClick={() => setScale(Math.min(3, scale + 0.25))}
-              className="px-3 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              className="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 scale-on-hover shadow-md"
             >
               +
+            </button>
+            <button
+              onClick={handleFitToPage}
+              className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium scale-on-hover shadow-md"
+              title="Ajustar página completa al visor"
+            >
+              Ajustar
             </button>
           </div>
         </div>
 
         {/* PDF Viewer */}
-        <div className="flex-1 overflow-auto bg-gray-200 p-8">
+        <div ref={viewerContainerRef} className="flex-1 overflow-auto bg-gradient-to-br from-gray-100 to-gray-200 p-8">
           {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-gray-600">Cargando detecciones...</div>
+            <div className="flex flex-col items-center justify-center h-full gap-6">
+              <div className="spinner-rings"></div>
+              <div className="flex flex-col items-center gap-2">
+                <div className="text-gray-700 text-xl font-semibold text-gradient-shift">
+                  Preparando revisión
+                </div>
+                <div className="text-gray-600 text-base flex items-center gap-1">
+                  {loadingStep}
+                  <span className="dots-pulse text-blue-600">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                </div>
+              </div>
+              {/* Skeleton loader para simular interfaz */}
+              <div className="mt-8 space-y-3 w-full max-w-md">
+                <div className="h-4 skeleton rounded"></div>
+                <div className="h-4 skeleton rounded w-3/4"></div>
+                <div className="h-4 skeleton rounded w-1/2"></div>
+              </div>
             </div>
           ) : (
             <div className="relative inline-block">

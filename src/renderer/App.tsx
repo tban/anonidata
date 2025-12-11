@@ -28,6 +28,7 @@ function App() {
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [reviewState, setReviewState] = useState<ReviewState | null>(null);
   const [isDetecting, setIsDetecting] = useState<number | null>(null);
+  const [processingStep, setProcessingStep] = useState<string>('');
   const [completionData, setCompletionData] = useState<{
     type: 'success' | 'partial' | 'error' | 'critical';
     successCount: number;
@@ -127,7 +128,26 @@ function App() {
         prev.map((f) => ({ ...f, status: 'processing' as const, progress: 0 }))
       );
 
+      // Simular pasos de procesamiento para mejor UX
+      const steps = [
+        'Analizando documentos...',
+        'Detectando datos personales...',
+        'Procesando anonimizaciones...',
+        'Generando PDFs finales...'
+      ];
+
+      let stepIndex = 0;
+      const stepInterval = setInterval(() => {
+        if (stepIndex < steps.length) {
+          setProcessingStep(steps[stepIndex]);
+          stepIndex++;
+        }
+      }, 1500);
+
       const result = await window.anonidata.process.anonymize(filePaths);
+
+      clearInterval(stepInterval);
+      setProcessingStep('');
 
       const endTime = Date.now();
       const processingTimeSeconds = ((endTime - startTime) / 1000).toFixed(2);
@@ -383,10 +403,10 @@ function App() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border-4 border-dashed rounded-lg p-12 mb-6 text-center transition-colors ${
+          className={`border-4 border-dashed rounded-2xl p-12 mb-6 text-center transition-all duration-300 ${
             isDragActive
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-300 bg-white'
+              ? 'border-blue-500 glass scale-105 shadow-2xl'
+              : 'border-gray-300 bg-white shadow-md hover:shadow-lg'
           }`}
         >
           <div className="text-gray-600">
@@ -432,12 +452,24 @@ function App() {
             <button
               onClick={handleProcess}
               disabled={isProcessing || files.every((f) => f.status === 'completed')}
-              className="btn-primary btn-ripple"
+              className="btn-primary btn-ripple scale-on-hover"
             >
               {isProcessing ? (
                 <span className="flex items-center justify-center gap-3">
-                  <div className="spinner-modern"></div>
-                  <span className="animate-pulse-soft">Procesando archivos...</span>
+                  <div className="spinner-rings"></div>
+                  <div className="flex flex-col items-start">
+                    <span className="text-gradient-shift font-bold">Procesando archivos</span>
+                    {processingStep && (
+                      <span className="text-sm text-blue-100 flex items-center gap-1">
+                        {processingStep}
+                        <span className="dots-pulse text-blue-200">
+                          <span></span>
+                          <span></span>
+                          <span></span>
+                        </span>
+                      </span>
+                    )}
+                  </div>
                 </span>
               ) : (
                 'Anonimizar PDFs'
@@ -448,14 +480,14 @@ function App() {
 
         {/* File List */}
         {files.length > 0 && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="glass rounded-2xl shadow-xl p-6 mb-6 border border-gray-200/50">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-gray-800">
                 Archivos ({files.length})
               </h2>
               <button
                 onClick={handleClear}
-                className="text-sm text-gray-600 hover:text-red-600 transition-colors"
+                className="text-sm text-gray-600 hover:text-red-600 transition-all scale-on-hover font-medium"
                 disabled={isProcessing}
               >
                 Limpiar lista
@@ -466,10 +498,10 @@ function App() {
               {files.map((file, idx) => (
                 <div
                   key={idx}
-                  className={`list-item border rounded-lg p-4 hover:shadow-lg transition-all duration-200 card-hover ${
+                  className={`list-item border-2 rounded-xl p-4 transition-all duration-300 ${
                     file.status === 'processing'
-                      ? 'border-blue-400 bg-blue-50 shadow-md animate-pulse-soft'
-                      : 'border-gray-200 hover:border-blue-300'
+                      ? 'border-blue-400 bg-blue-50 shadow-xl ring-2 ring-blue-200 scale-[1.02]'
+                      : 'border-gray-200 hover:border-blue-300 shadow-md hover:shadow-xl card-hover bg-white'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -508,15 +540,22 @@ function App() {
                       <div className="flex items-center justify-between text-xs text-gray-600">
                         <span className="flex items-center gap-2">
                           <div className="spinner-modern" style={{width: '12px', height: '12px', borderWidth: '2px'}}></div>
-                          <span className="animate-pulse-soft font-medium">Procesando documento...</span>
+                          <span className="font-medium flex items-center gap-1">
+                            {processingStep || 'Procesando documento'}
+                            <span className="dots-pulse text-blue-600">
+                              <span></span>
+                              <span></span>
+                              <span></span>
+                            </span>
+                          </span>
                         </span>
                         <span className="font-semibold">{file.progress}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden shadow-inner">
                         <div
-                          className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-500 h-2 rounded-full transition-all duration-300 animate-shimmer"
+                          className="bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-500 h-2.5 rounded-full transition-all duration-500 progress-wave"
                           style={{
-                            width: `${file.progress}%`,
+                            width: `${file.progress || 50}%`,
                             backgroundSize: '200% 100%'
                           }}
                         />
@@ -561,12 +600,19 @@ function App() {
                       <button
                         onClick={() => handleStartReview(idx)}
                         disabled={isDetecting === idx}
-                        className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 hover:scale-105 active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100 transition-all duration-200"
+                        className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 scale-on-hover disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100 transition-all duration-200 shadow-md hover:shadow-lg"
                       >
                         {isDetecting === idx ? (
                           <span className="flex items-center justify-center gap-2">
                             <div className="spinner-modern" style={{width: '14px', height: '14px', borderWidth: '2px'}}></div>
-                            <span className="animate-pulse-soft">Detectando PII...</span>
+                            <span className="flex items-center gap-1">
+                              Detectando PII
+                              <span className="dots-pulse text-blue-200">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                              </span>
+                            </span>
                           </span>
                         ) : (
                           'Revisión manual'
@@ -582,22 +628,22 @@ function App() {
 
         {/* Results Summary */}
         {processResult && (
-          <div className="mt-8 bg-white rounded-lg shadow-md p-6">
+          <div className="mt-8 glass rounded-2xl shadow-xl p-6 border border-gray-200/50">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">
               Resumen del Procesamiento
             </h2>
             <div className="grid grid-cols-2 gap-4">
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-3xl font-bold text-green-600">
+              <div className="text-center p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl shadow-md border border-green-200">
+                <p className="text-4xl font-bold text-green-600 mb-1">
                   {processResult.results.filter((r) => r.status === 'success').length}
                 </p>
-                <p className="text-sm text-gray-600">Archivos exitosos</p>
+                <p className="text-sm text-gray-600 font-medium">Archivos exitosos</p>
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg">
-                <p className="text-3xl font-bold text-red-600">
+              <div className="text-center p-6 bg-gradient-to-br from-red-50 to-rose-50 rounded-xl shadow-md border border-red-200">
+                <p className="text-4xl font-bold text-red-600 mb-1">
                   {processResult.results.filter((r) => r.status === 'error').length}
                 </p>
-                <p className="text-sm text-gray-600">Archivos con error</p>
+                <p className="text-sm text-gray-600 font-medium">Archivos con error</p>
               </div>
             </div>
           </div>
@@ -622,8 +668,8 @@ function App() {
 
       {/* Modal de Completación */}
       {showCompletionModal && completionData && (
-        <div className="modal-backdrop p-4">
-          <div className="modal-content bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="modal-backdrop backdrop-blur-strong p-4">
+          <div className="modal-content glass rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border-2 border-white/20">
             {/* Header */}
             <div className={`p-8 rounded-t-2xl ${
               completionData.type === 'success' ? 'bg-gradient-to-r from-green-500 to-green-600' :
@@ -750,8 +796,8 @@ function App() {
 
       {/* Modal About AnoniData */}
       {showAboutModal && (
-        <div className="modal-backdrop p-4">
-          <div className="modal-content bg-white rounded-2xl shadow-2xl max-w-lg w-full">
+        <div className="modal-backdrop backdrop-blur-strong p-4">
+          <div className="modal-content glass rounded-2xl shadow-2xl max-w-lg w-full border-2 border-white/20">
             {/* Header */}
             <div className="p-8 rounded-t-2xl bg-gradient-to-r from-blue-600 to-indigo-600">
               <div className="text-white text-center">
