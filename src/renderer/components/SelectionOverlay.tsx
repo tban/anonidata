@@ -89,6 +89,16 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
       pdfBBox.y1
     ]
 
+    // DEBUG: Log detallado de la conversión de coordenadas
+    console.log('=== SELECCIÓN MANUAL ===')
+    console.log('Canvas dimensions:', { width: canvasWidth, height: canvasHeight })
+    console.log('PDF page height:', pdfPageHeight)
+    console.log('Scale:', scale)
+    console.log('Screen rect:', screenRect)
+    console.log('PDF bbox:', pdfBBox)
+    console.log('Final bbox array:', bbox)
+    console.log('=======================')
+
     // Llamar al callback con las coordenadas PDF
     onAddManualDetection(bbox)
 
