@@ -4,6 +4,7 @@ import { ReviewScreen } from './screens/ReviewScreen';
 import { UpdateNotification } from './components/UpdateNotification';
 import logoImage from './assets/logo.png';
 
+
 interface FileItem {
   path: string;
   name: string;
@@ -11,12 +12,14 @@ interface FileItem {
   status: 'pending' | 'processing' | 'completed' | 'error';
   progress: number;
   result?: any;
+  pdfType?: 'text' | 'image' | 'detecting';
 }
 
 interface ReviewState {
   originalFilePath: string;
   preAnonymizedPath: string;
   detectionsPath: string;
+  pdfType: 'text' | 'image' | 'detecting';
 }
 
 function App() {
@@ -54,6 +57,18 @@ function App() {
     }
   }, []);
 
+  // Función para detectar si un PDF es de texto o imagen usando el backend para consistencia
+  const detectPdfType = useCallback(async (filePath: string): Promise<'text' | 'image'> => {
+    try {
+      // Usar directamente el backend (PyMuPDF) que tiene el mismo criterio que el proceso de anonimización
+      return await window.anonidata.utils.checkPdfType(filePath);
+    } catch (error) {
+      console.error('Error detectando tipo PDF con backend:', error);
+      // Fallback seguro a text para permitir intento de procesado
+      return 'text';
+    }
+  }, []);
+
   const handleSelectFiles = useCallback(async () => {
     const filePaths = await window.anonidata.dialog.openFile();
     if (filePaths.length > 0) {
@@ -65,11 +80,26 @@ function App() {
           size: 0, // No tenemos el tamaño desde el diálogo
           status: 'pending' as const,
           progress: 0,
+          pdfType: 'detecting' as const,
         };
       });
       setFiles((prev) => [...prev, ...newFiles]);
+
+      // Detectar tipo de PDF para cada archivo en paralelo
+      newFiles.forEach(async (file, idx) => {
+        const pdfType = await detectPdfType(file.path);
+        setFiles((prev) => {
+          const updated = [...prev];
+          const fileIndex = prev.length - newFiles.length + idx;
+          if (updated[fileIndex]) {
+            updated[fileIndex] = { ...updated[fileIndex], pdfType };
+          }
+          return updated;
+        });
+      });
     }
-  }, []);
+  }, [detectPdfType]);
+
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -118,16 +148,72 @@ function App() {
         size: file.size,
         status: 'pending' as const,
         progress: 0,
+        pdfType: 'detecting' as const,
       };
     });
 
     if (newFiles.length > 0) {
       setFiles((prev) => [...prev, ...newFiles]);
+
+      // Detectar tipo de PDF para cada archivo en paralelo
+      newFiles.forEach(async (file, idx) => {
+        const pdfType = await detectPdfType(file.path);
+        setFiles((prev) => {
+          const updated = [...prev];
+          const fileIndex = prev.length - newFiles.length + idx;
+          if (updated[fileIndex]) {
+            updated[fileIndex] = { ...updated[fileIndex], pdfType };
+          }
+          return updated;
+        });
+      });
     }
-  }, []);
+  }, [detectPdfType]);
 
   const handleProcess = async () => {
     if (files.length === 0) return;
+
+    // Separar archivos de texto de los de imagen
+    const textFiles = files.filter((f) => f.pdfType === 'text');
+    const imageFiles = files.filter((f) => f.pdfType === 'image');
+    const detectingFiles = files.filter((f) => f.pdfType === 'detecting');
+
+    // Si hay archivos aún detectando, esperar
+    if (detectingFiles.length > 0) {
+      setCompletionData({
+        type: 'partial',
+        successCount: 0,
+        errorCount: 0,
+        totalFiles: files.length,
+        processingTime: '0',
+        warnings: [{
+          file: 'Detección en progreso',
+          warnings: ['Hay archivos pendientes de detección. Por favor, espere a que se complete la detección de todos los archivos.']
+        }]
+      });
+      setShowCompletionModal(true);
+      return;
+    }
+
+    // Si no hay archivos de texto para procesar
+    if (textFiles.length === 0) {
+      setCompletionData({
+        type: 'partial',
+        successCount: 0,
+        errorCount: 0,
+        totalFiles: imageFiles.length,
+        processingTime: '0',
+        warnings: [{
+          file: `${imageFiles.length} PDF(s) de imagen detectado(s)`,
+          warnings: [
+            'Los PDFs de imagen no se pueden procesar automáticamente.',
+            'Utiliza el botón "Revisión manual" para cada archivo de imagen.'
+          ]
+        }]
+      });
+      setShowCompletionModal(true);
+      return;
+    }
 
     setIsProcessing(true);
     setProcessResult(null);
@@ -135,11 +221,17 @@ function App() {
     const startTime = Date.now();
 
     try {
-      const filePaths = files.map((f) => f.path);
+      // Solo procesar archivos de texto
+      const filePaths = textFiles.map((f) => f.path);
 
-      // Actualizar estados a "processing"
+      // Actualizar estados: procesando para texto, skipped para imagen
       setFiles((prev) =>
-        prev.map((f) => ({ ...f, status: 'processing' as const, progress: 0 }))
+        prev.map((f) => {
+          if (f.pdfType === 'image') {
+            return { ...f, status: 'completed' as const, progress: 100 };
+          }
+          return { ...f, status: 'processing' as const, progress: 0 };
+        })
       );
 
       // Simular pasos de procesamiento para mejor UX
@@ -166,16 +258,25 @@ function App() {
       const endTime = Date.now();
       const processingTimeSeconds = ((endTime - startTime) / 1000).toFixed(2);
 
-      // Actualizar resultados
+      // Actualizar resultados para archivos de texto
       setFiles((prev) =>
-        prev.map((f, idx) => {
-          const fileResult = result.results[idx];
-          return {
-            ...f,
-            status: fileResult.status === 'success' ? 'completed' : 'error',
-            progress: 100,
-            result: fileResult,
-          };
+        prev.map((f) => {
+          // Mantener estado de imagen como completado (saltado)
+          if (f.pdfType === 'image') {
+            return f;
+          }
+          // Buscar resultado correspondiente para archivos de texto
+          const resultIdx = textFiles.findIndex((tf) => tf.path === f.path);
+          if (resultIdx >= 0 && result.results[resultIdx]) {
+            const fileResult = result.results[resultIdx];
+            return {
+              ...f,
+              status: fileResult.status === 'success' ? 'completed' : 'error',
+              progress: 100,
+              result: fileResult,
+            };
+          }
+          return f;
         })
       );
 
@@ -184,15 +285,24 @@ function App() {
       // Contar archivos exitosos y fallidos
       const successCount = result.results.filter((r) => r.status === 'success').length;
       const errorCount = result.results.filter((r) => r.status === 'error').length;
-      const totalFiles = result.results.length;
+      const totalFiles = result.results.length + imageFiles.length;
 
       // Extraer warnings de archivos exitosos
       const fileWarnings = result.results
         .filter((r) => r.status === 'success' && r.warnings && r.warnings.length > 0)
         .map((r) => ({
           file: r.inputFile.split('/').pop() || r.inputFile,
-          warnings: r.warnings
+          warnings: r.warnings || []
         }));
+
+      // Añadir advertencia para archivos de imagen saltados
+      if (imageFiles.length > 0) {
+        const imageWarning = {
+          file: `${imageFiles.length} archivo(s) de imagen`,
+          warnings: imageFiles.map((f) => `"${f.name}" - Los PDFs de imagen deben procesarse mediante "Revisión manual"`)
+        };
+        fileWarnings.push(imageWarning);
+      }
 
       // Preparar datos para el modal según el resultado
       if (successCount > 0 && errorCount === 0) {
@@ -280,6 +390,7 @@ function App() {
           originalFilePath: file.path,
           preAnonymizedPath: result.preAnonymizedPath,
           detectionsPath: result.detectionsPath,
+          pdfType: file.pdfType || 'text',
         });
       } else {
         console.error('Error iniciando revisión:', result.error);
@@ -306,7 +417,8 @@ function App() {
       const result = await window.anonidata.process.finalizeAnonymization(
         reviewState.originalFilePath,
         reviewState.detectionsPath,
-        approvedIndices
+        approvedIndices,
+        { isImagePdf: reviewState.pdfType === 'image' }
       );
 
       if (result.success) {
@@ -417,29 +529,32 @@ function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-50 to-cyan-50">
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <header className="relative text-center mb-8">
+        {/* Header - Layout Flex para alinear icono grande y texto */}
+        <header className="flex items-center gap-6 mb-10 relative">
           <button
             onClick={() => setShowAboutModal(true)}
-            className="absolute right-0 top-0 w-10 h-10 flex items-center justify-center hover:scale-110 transition-transform duration-200 rounded-lg hover:shadow-lg"
+            className="flex-shrink-0 w-24 h-24 flex items-center justify-center hover:scale-105 transition-transform duration-200 rounded-2xl hover:shadow-lg bg-white/50 backdrop-blur-sm shadow-sm border border-white/60"
             title="Acerca de AnoniData"
           >
             <img
               src={logoImage}
               alt="AnoniData Logo"
-              className="w-8 h-8 object-contain"
+              className="w-16 h-16 object-contain"
             />
           </button>
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">AnoniData</h1>
-          <p className="text-gray-600">
-            Anonimización de PDFs conforme a RGPD by{' '}
-            <button
-              onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
-              className="text-teal-600 hover:text-teal-700 hover:underline transition-colors cursor-pointer"
-            >
-              @TbanR
-            </button>
-          </p>
+
+          <div className="flex-1 text-center pr-24"> {/* Padding right compensa el ancho del icono para mantener centrado el texto */}
+            <h1 className="text-4xl font-bold text-gray-800 mb-2">AnoniData</h1>
+            <p className="text-gray-600">
+              Anonimización de PDFs conforme a RGPD by{' '}
+              <button
+                onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
+                className="text-teal-600 hover:text-teal-700 hover:underline transition-colors cursor-pointer"
+              >
+                @TbanR
+              </button>
+            </p>
+          </div>
         </header>
 
         {/* File Selection Area - Drag & Drop */}
@@ -447,11 +562,10 @@ function App() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border-4 border-dashed rounded-2xl p-12 mb-6 text-center transition-all duration-300 ${
-            isDragActive
-              ? 'border-teal-500 glass scale-105 shadow-2xl'
-              : 'border-gray-300 bg-white shadow-md hover:shadow-lg'
-          }`}
+          className={`border-4 border-dashed rounded-2xl p-12 mb-6 text-center transition-all duration-300 ${isDragActive
+            ? 'border-teal-500 glass scale-105 shadow-2xl'
+            : 'border-gray-300 bg-white shadow-md hover:shadow-lg'
+            }`}
         >
           <div className="text-gray-600">
             <svg
@@ -542,18 +656,35 @@ function App() {
               {files.map((file, idx) => (
                 <div
                   key={idx}
-                  className={`list-item border-2 rounded-xl p-4 transition-all duration-300 ${
-                    file.status === 'processing'
-                      ? 'border-teal-400 bg-teal-50 shadow-xl ring-2 ring-teal-200 scale-[1.02]'
-                      : 'border-gray-200 hover:border-teal-300 shadow-md hover:shadow-xl card-hover bg-white'
-                  }`}
+                  className={`list-item border-2 rounded-xl p-4 transition-all duration-300 ${file.status === 'processing'
+                    ? 'border-teal-400 bg-teal-50 shadow-xl ring-2 ring-teal-200 scale-[1.02]'
+                    : 'border-gray-200 hover:border-teal-300 shadow-md hover:shadow-xl card-hover bg-white'
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
                         {file.name}
                       </p>
-                      <p className="text-xs text-gray-500">{formatBytes(file.size)}</p>
+                      <p className="text-xs text-gray-500 flex items-center gap-2">
+                        <span>{formatBytes(file.size)}</span>
+                        {file.pdfType === 'detecting' && (
+                          <span className="inline-flex items-center gap-1 text-gray-400">
+                            <div className="w-3 h-3 border-2 border-gray-300 border-t-teal-500 rounded-full animate-spin"></div>
+                            <span>Detectando...</span>
+                          </span>
+                        )}
+                        {file.pdfType === 'text' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                            📄 Texto
+                          </span>
+                        )}
+                        {file.pdfType === 'image' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+                            🖼️ Imagen
+                          </span>
+                        )}
+                      </p>
                     </div>
                     <div className="ml-4">
                       {file.status === 'pending' && (
@@ -583,7 +714,7 @@ function App() {
                     <div className="mt-3 space-y-2">
                       <div className="flex items-center justify-between text-xs text-gray-600">
                         <span className="flex items-center gap-2">
-                          <div className="spinner-modern" style={{width: '12px', height: '12px', borderWidth: '2px'}}></div>
+                          <div className="spinner-modern" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></div>
                           <span className="font-medium flex items-center gap-1">
                             {processingStep || 'Procesando documento'}
                             <span className="dots-pulse text-teal-600">
@@ -643,12 +774,12 @@ function App() {
                     <div className="mt-3 flex justify-end">
                       <button
                         onClick={() => handleStartReview(idx)}
-                        disabled={isDetecting === idx}
+                        disabled={isDetecting === idx || file.pdfType === 'detecting'}
                         className="px-3 py-1.5 bg-teal-600 text-white text-xs rounded hover:bg-teal-700 scale-on-hover disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100 transition-all duration-200 shadow-md hover:shadow-lg"
                       >
                         {isDetecting === idx ? (
                           <span className="flex items-center justify-center gap-2">
-                            <div className="spinner-modern" style={{width: '14px', height: '14px', borderWidth: '2px'}}></div>
+                            <div className="spinner-modern" style={{ width: '14px', height: '14px', borderWidth: '2px' }}></div>
                             <span className="flex items-center gap-1">
                               Detectando PII
                               <span className="dots-pulse text-teal-200">
@@ -715,11 +846,10 @@ function App() {
         <div className="modal-backdrop backdrop-blur-strong p-4">
           <div className="modal-content glass rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border-2 border-white/20">
             {/* Header */}
-            <div className={`p-8 rounded-t-2xl ${
-              completionData.type === 'success' ? 'bg-gradient-to-r from-green-500 to-green-600' :
+            <div className={`p-8 rounded-t-2xl ${completionData.type === 'success' ? 'bg-gradient-to-r from-green-500 to-green-600' :
               completionData.type === 'partial' ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
-              'bg-gradient-to-r from-red-500 to-red-600'
-            }`}>
+                'bg-gradient-to-r from-red-500 to-red-600'
+              }`}>
               <div className="flex items-center justify-between text-white">
                 <h2 className="text-3xl font-bold">
                   {completionData.type === 'success' && 'Proceso Completado'}
@@ -881,7 +1011,7 @@ function App() {
                       className="inline-flex items-center gap-2 text-teal-600 hover:text-teal-700 font-medium transition-colors cursor-pointer"
                     >
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
                       </svg>
                       @TbanR
                     </button>

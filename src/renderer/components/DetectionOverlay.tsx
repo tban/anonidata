@@ -32,12 +32,7 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
   onDetectionHover
 }) => {
   // Filtrar detecciones de la página actual
-  // NOTA: PyMuPDF usa índice base-0 (primera página = 0), PDF.js usa base-1 (primera página = 1)
   const pageDetections = detections.filter(d => d.page_num === currentPage - 1)
-
-  // Debug desactivado para mejor visualización
-  // console.log('===== DetectionOverlay - Render =====')
-  // console.log('Página:', currentPage, '| Detecciones:', pageDetections.length)
 
   if (pageDetections.length === 0 || !canvasWidth || !canvasHeight) {
     return null
@@ -53,7 +48,6 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
       }}
     >
       {pageDetections.map((detection) => {
-        // Coordenadas del PDF guardadas
         const pdfBBox: PDFBBox = {
           x0: detection.bbox[0],
           y0: detection.bbox[1],
@@ -61,36 +55,21 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
           y1: detection.bbox[3]
         }
 
-        // Convertir directamente a coordenadas de pantalla (solo escalar)
         const screenRect: ScreenRect = pdfToScreen(pdfBBox, pdfPageHeight, scale)
 
-        // DEBUG: Log coordinate transformation for manual vs automatic detections
-        if (detection.source === 'manual') {
-          console.log('=== DETECCIÓN MANUAL - DISPLAY ===')
-          console.log('Detection index:', detection.index)
-          console.log('PDF bbox:', pdfBBox)
-          console.log('Screen rect:', screenRect)
-          console.log('PDF page dimensions:', { width: pdfPageWidth, height: pdfPageHeight })
-          console.log('Scale:', scale)
-          console.log('==================================')
-        }
-
-        // Usar los campos directos del objeto en lugar de los Sets
         const isApproved = detection.isApproved || approvedIndices.has(detection.index)
         const isRejected = detection.isRejected || rejectedIndices.has(detection.index)
-
-        // Color base según tipo de detección
         const baseColor = getDetectionColor(detection.type)
 
-        // APROBADO (para anonimizar) = Rojo cruzado
-        // RECHAZADO (NO anonimizar) = Naranja sin cruzar
-        // PENDIENTE = Color base del tipo
         const displayColor = isApproved ? '#ef4444' : isRejected ? '#ff8c00' : baseColor
         const fillOpacity = isApproved ? 0.3 : isRejected ? 0.2 : 0.25
         const strokeWidth = isApproved ? 3 : isRejected ? 2 : 2
 
+        // Cálculo ancho etiqueta aprox (6px por char + padding)
+        const labelWidth = (detection.type.length * 7) + 12
+
         return (
-          <g key={detection.index}>
+          <g key={detection.index} className="group">
             {/* Rectángulo de detección */}
             <rect
               x={screenRect.x}
@@ -111,8 +90,30 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
               onMouseLeave={() => onDetectionHover?.(null)}
             />
 
-            {/* Indicador visual de estado */}
-            {/* APROBADO (para anonimizar) = X cruzada en rojo */}
+            {/* Etiqueta de Tipo (visible siempre o en hover?) - Siempre visible ayuda */}
+            <g style={{ pointerEvents: 'none' }}>
+              <rect
+                x={screenRect.x}
+                y={screenRect.y - 16}
+                width={labelWidth}
+                height={16}
+                rx={2}
+                fill={baseColor}
+                opacity={0.9}
+              />
+              <text
+                x={screenRect.x + 4}
+                y={screenRect.y - 4}
+                fill="white"
+                fontSize="10"
+                fontWeight="bold"
+                fontFamily="sans-serif"
+              >
+                {detection.type}
+              </text>
+            </g>
+
+            {/* Indicador visual Aprobado (X cruzada grande) */}
             {isApproved && (
               <>
                 <line
@@ -137,8 +138,6 @@ export const DetectionOverlay: React.FC<DetectionOverlayProps> = ({
                 />
               </>
             )}
-
-            {/* RECHAZADO (NO anonimizar) = Sin marca adicional, solo naranja */}
           </g>
         )
       })}

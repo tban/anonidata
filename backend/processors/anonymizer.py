@@ -74,7 +74,8 @@ class Anonymizer:
 
             # Añadir encabezado a todas las páginas
             for page in doc:
-                self._add_header(page)
+                is_scanned = self._is_scanned_page(page)
+                self._add_header(page, is_scanned=is_scanned)
 
             # Guardar documento anonimizado
             doc.save(
@@ -103,12 +104,13 @@ class Anonymizer:
 
         return grouped
 
-    def _add_header(self, page: fitz.Page) -> None:
+    def _add_header(self, page: fitz.Page, is_scanned: bool = False) -> None:
         """
         Añade encabezado "AnoniData (año)" en la esquina superior derecha
 
         Args:
             page: Página de PyMuPDF
+            is_scanned: Si True, aplica transformación de coordenadas para páginas escaneadas
         """
         from datetime import datetime
 
@@ -126,34 +128,71 @@ class Anonymizer:
         # Calcular ancho aproximado del texto (estimación: 6 pixeles por caracter)
         text_width_approx = len(header_text) * (font_size * 0.6)
 
-        # Posición: margen desde la derecha, margen desde arriba
-        x = page_rect.width - text_width_approx - margin
-        y = margin + font_size  # Añadir font_size para que el texto no se corte
+        # Si la pagina tiene rotación, debemos calcular la posición visual Top-Right
+        # y transformarla a coordenadas de UserSpace
+        if page.rotation != 0:
+            # Calcular posición en coordenadas visuales (viewport)
+            # Como si la página estuviera vertical y "normal"
+            # Visual Top-Right
+            vis_x = page.rect.width - text_width_approx - margin
+            vis_y = margin + font_size
 
-        # Insertar texto directamente en la página
-        page.insert_text(
-            (x, y),
-            header_text,
-            fontsize=font_size,
-            fontname="helv",  # Helvetica
-            color=(0.5, 0.5, 0.5)  # Gris medio (RGB)
-        )
+            # Obtener matriz de derotación (Visual -> UserSpace)
+            mat = page.derotation_matrix
+            
+            # Transformar punto visual a UserSpace
+            point_vis = fitz.Point(vis_x, vis_y)
+            point_us = point_vis * mat
+            
+            x, y = point_us.x, point_us.y
+            
+            # Rotar el texto para compensar la rotación de la página
+            # Usar page.rotation positivo corrige la orientación "boca abajo"
+            text_rotation = page.rotation
+            
+            logger.debug(f"Header: Visual({vis_x}, {vis_y}) -> User({x}, {y}) | Rot({text_rotation})")
 
-    def _anonymize_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
+            # Insertar texto con coordenadas transformadas y rotación
+            page.insert_text(
+                (x, y),
+                header_text,
+                fontsize=font_size,
+                fontname="helv",  # Helvetica
+                color=(0.5, 0.5, 0.5),  # Gris medio (RGB)
+                rotate=text_rotation
+            )
+        else:
+            # Página estándar sin rotación
+            x = page.rect.width - text_width_approx - margin
+            y = margin + font_size  # Añadir font_size para que el texto no se corte
+
+            # Insertar texto directamente
+            page.insert_text(
+                (x, y),
+                header_text,
+                fontsize=font_size,
+                fontname="helv",  # Helvetica
+                color=(0.5, 0.5, 0.5)  # Gris medio (RGB)
+            )
+
+    def _anonymize_page(self, page: fitz.Page, matches: List[PIIMatch], force_image_mode: bool = False) -> None:
         """
         Anonimiza una página completa
 
         Args:
             page: Página de PyMuPDF
             matches: Matches a redactar
+            force_image_mode: Si True, fuerza el uso de lógica de página escaneada
         """
         logger.info(f"Anonimizando página {page.number}: {len(matches)} detecciones")
 
         # Detectar si la página es principalmente imagen escaneada
-        is_scanned = self._is_scanned_page(page)
+        # Si force_image_mode es True, asumimos que es escaneada
+        is_scanned = force_image_mode or self._is_scanned_page(page)
 
         if is_scanned:
-            logger.info(f"Página {page.number} detectada como escaneada, usando método de renderizado")
+            mode_str = "FORZADO (imagen)" if force_image_mode else "detectado escaneado"
+            logger.info(f"Página {page.number} tratada como imagen ({mode_str}), usando método de renderizado y rotación")
             self._anonymize_scanned_page(page, matches)
         else:
             logger.info(f"Página {page.number} con texto nativo, usando redacciones estándar")
@@ -200,24 +239,50 @@ class Anonymizer:
         """
         logger.info(f"Anonimizando página escaneada {page.number} con {len(matches)} matches usando anotaciones")
 
+        # Obtener dimensiones de la página PDF original (sin rotar)
+        page_rect = page.rect
+        page_width = page_rect.width
+        page_height = page_rect.height
+
         # Para cada match, crear una anotación de cuadrado opaco
         # Las anotaciones son OVERLAYS verdaderos que NO modifican el contenido subyacente
         for match in matches:
             bbox = match.bbox
-            rect = fitz.Rect(bbox)
+            if page.rotation != 0:
+                # Las coordenadas de detección (bbox) en PDFs de imagen suelen corresponder a la vista visual
+                # Transformamos esas coordenadas visuales a UserSpace para dibujar sobre el PDF correctamente
+                
+                # Obtener matriz de derotación (Visual -> UserSpace)
+                mat = page.derotation_matrix
+                
+                # Transformar el rectángulo visual a UserSpace
+                rect_vis = fitz.Rect(bbox)
+                rect_us = rect_vis * mat
+                
+                logger.debug(f"Redaction: Visual {bbox} -> User {rect_us} (Rot: {page.rotation})")
+                
+                # Dibujar el rectángulo transformado
+                shape = page.new_shape()
+                shape.draw_rect(rect_us)
+                shape.finish(
+                    fill=self.settings.redaction_color,
+                    color=self.settings.redaction_color,
+                    width=0
+                )
+                shape.commit()
+            else:
+                # Usar bbox original sin rotación
+                rect = fitz.Rect(bbox)
 
-            # Usar page.new_shape() para dibujar rectángulos opacos
-            # Este método se verificó que funciona correctamente con el script de prueba
-            shape = page.new_shape()
-            shape.draw_rect(rect)
-            shape.finish(
-                fill=self.settings.redaction_color,
-                color=self.settings.redaction_color,
-                width=0
-            )
-            shape.commit()
-
-            logger.debug(f"  Rectángulo de anonimización dibujado en {bbox}")
+                # Usar page.new_shape() para dibujar rectángulos opacos
+                shape = page.new_shape()
+                shape.draw_rect(rect)
+                shape.finish(
+                    fill=self.settings.redaction_color,
+                    color=self.settings.redaction_color,
+                    width=0
+                )
+                shape.commit()
 
         logger.info(f"Página escaneada {page.number} anonimizada con anotaciones overlay")
 
@@ -397,6 +462,7 @@ class Anonymizer:
         self,
         input_path: Path,
         approved_detections: List[PIIMatch],
+        force_image_mode: bool = False,
     ) -> Path:
         """
         Aplica redacciones finales SOLO a las detecciones aprobadas,
@@ -405,6 +471,7 @@ class Anonymizer:
         Args:
             input_path: Ruta al PDF original
             approved_detections: Lista de PII aprobados para anonimizar
+            force_image_mode: Si True, fuerza el uso de lógica de página escaneada (rotación coords)
 
         Returns:
             Ruta al PDF final anonimizado
@@ -425,11 +492,12 @@ class Anonymizer:
             for page_num, matches in matches_by_page.items():
                 if page_num < doc.page_count:
                     page = doc[page_num]
-                    self._anonymize_page(page, matches)
+                    self._anonymize_page(page, matches, force_image_mode=force_image_mode)
 
             # Añadir encabezado a todas las páginas
             for page in doc:
-                self._add_header(page)
+                is_scanned = self._is_scanned_page(page)
+                self._add_header(page, is_scanned=is_scanned)
 
             # Guardar documento final anonimizado
             doc.save(

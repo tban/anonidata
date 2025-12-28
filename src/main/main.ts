@@ -394,8 +394,8 @@ app.on('ready', () => {
 
   ipcMain.handle(
     'process:finalizeAnonymization',
-    async (_event: any, originalFile: string, detectionsPath: string, approvedIndices: number[]) => {
-      log.info(`Finalizando anonimización para: ${originalFile}`);
+    async (_event: any, originalFile: string, detectionsPath: string, approvedIndices: number[], options?: { isImagePdf?: boolean }) => {
+      log.info(`Finalizando anonimización para: ${originalFile} (Es PDF imagen: ${options?.isImagePdf})`);
 
       return new Promise(async (resolve, reject) => {
         if (!pythonProcess || pythonProcess.exitCode !== null || !pythonBackendReady) {
@@ -413,6 +413,7 @@ app.on('ready', () => {
           originalFile: originalFile,
           detectionsPath: detectionsPath,
           approvedIndices: approvedIndices,
+          isImagePdf: options?.isImagePdf,
           settings: store.get('settings'),
         };
 
@@ -538,6 +539,85 @@ app.on('ready', () => {
       log.error(`Error leyendo archivo PDF ${filePath}:`, error.message);
       throw error;
     }
+  });
+
+  ipcMain.handle('utils:checkPdfType', async (_event: any, filePath: string) => {
+    log.info(`Verificando tipo PDF: ${filePath}`);
+
+    return new Promise(async (resolve, reject) => {
+      if (!pythonProcess || pythonProcess.exitCode !== null || !pythonBackendReady) {
+        try {
+          await startPythonBackend();
+        } catch (error: any) {
+          reject(new Error(`Error iniciando backend: ${error.message}`));
+          return;
+        }
+      }
+
+      const request = {
+        action: 'check_pdf_type',
+        files: [filePath], // Backend espera lista
+      };
+
+      if (pythonProcess.stdin) {
+        pythonProcess.stdin.write(JSON.stringify(request) + '\n');
+      }
+
+      let resolved = false;
+
+      const dataHandler = (data: Buffer) => {
+        if (resolved) return;
+
+        const chunk = data.toString();
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.trim() && line.includes('{') && line.includes('"success"')) {
+            try {
+              const response = JSON.parse(line);
+              // Verificar si es respuesta a nuestro tipo de mensaje (check_pdf_type devuelve results con 'type')
+              // O simplente confiamos en el orden si no hay concurrencia masiva.
+              // Como la comunicación es FIFO y el backend procesa secuencial, esto está bien por ahora.
+              // Pero check_pdf_type devuelve success y results.
+              if (response.success !== undefined) {
+                // Si es el mensaje ready inicial o un log, ignoramos si no cuadra?
+                // El backend responde 1 a 1.
+
+                resolved = true;
+                if (pythonProcess.stdout) {
+                  pythonProcess.stdout.removeListener('data', dataHandler);
+                }
+
+                if (response.success && response.results && response.results.length > 0) {
+                  resolve(response.results[0].type); // Retornar solo 'text' o 'image'
+                } else if (!response.success) {
+                  // Si falló backend, retornamos error o default? 
+                  // Mejor reject para manejar fallback en frontend si se quiere
+                  reject(new Error(response.error || 'Backend error'));
+                } else {
+                  // success true pero results vacio?
+                  reject(new Error('Respuesta vacía del backend'));
+                }
+                return;
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      };
+
+      if (pythonProcess.stdout) {
+        pythonProcess.stdout.on('data', dataHandler);
+      }
+
+      setTimeout(() => {
+        if (!resolved && pythonProcess.stdout) {
+          pythonProcess.stdout.removeListener('data', dataHandler);
+          reject(new Error('Timeout verificando tipo PDF'));
+        }
+      }, 30000); // 30s timeout
+    });
   });
 
   // IPC Handlers para actualización automática

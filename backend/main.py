@@ -159,10 +159,15 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
             ]
             logger.info(f"Aplicando redacciones a {len(approved_detections)} detecciones aprobadas de {len(all_detections)} totales")
 
+            is_image_pdf = request.get("isImagePdf", False)
+            if is_image_pdf:
+                logger.info("Forzando modo de imagen para anonimización (uso de overlays)")
+
             # Aplicar redacciones finales
             final_path = anonymizer.apply_final_redactions(
                 Path(original_file_path),
-                approved_detections
+                approved_detections,
+                force_image_mode=is_image_pdf
             )
 
             # Eliminar archivos temporales después de finalizar con éxito
@@ -208,6 +213,67 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
             "status": "healthy",
             "version": "1.0.0",
         }
+
+    elif action == "check_pdf_type":
+        """
+        Verifica rápidamente si los archivos son Texto o Imagen usando PyMuPDF
+        para consistencia con el motor de procesamiento.
+        """
+        files = request.get("files", [])
+        results = []
+
+        try:
+            import fitz  # PyMuPDF
+            
+            for file_path in files:
+                try:
+                    doc = fitz.open(file_path)
+                    total_text_len = 0
+                    pages_to_check = min(doc.page_count, 3)
+                    
+                    for i in range(pages_to_check):
+                        page = doc[i]
+                        # get_text("text") es rápido y extrae texto plano
+                        text = page.get_text("text").strip()
+                        # Eliminar espacios para contar contenido real
+                        dense_text = "".join(text.split())
+                        total_text_len += len(dense_text)
+                    
+                    doc.close()
+                    
+                    # Criterio: > 50 caracteres reales = texto
+                    pdf_type = "text" if total_text_len > 50 else "image"
+                    
+                    results.append({
+                        "file": file_path,
+                        "type": pdf_type,
+                        "textLength": total_text_len
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Error analizando tipo de PDF {file_path}: {e}")
+                    # Fallback seguro
+                    results.append({
+                        "file": file_path,
+                        "type": "error", # El frontend decidirá qué hacer (image o text default)
+                        "error": str(e)
+                    })
+
+            return {
+                "success": True,
+                "results": results
+            }
+
+        except ImportError:
+            return {
+                "success": False,
+                "error": "PyMuPDF (fitz) no instalado en backend"
+            }
+        except Exception as e:
+             return {
+                "success": False,
+                "error": str(e)
+            }
 
     else:
         return {

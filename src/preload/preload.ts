@@ -8,11 +8,12 @@ export interface AnoniDataAPI {
   };
   process: {
     anonymize: (files: string[]) => Promise<ProcessResult>;
-    detectOnly: (filePath: string) => Promise<DetectOnlyResult>;
+    detectOnly: (filePath: string, options?: { skipDetection?: boolean }) => Promise<DetectOnlyResult>;
     finalizeAnonymization: (
       originalFile: string,
       detectionsPath: string,
-      approvedIndices: number[]
+      approvedIndices: number[],
+      options?: { isImagePdf?: boolean }
     ) => Promise<FinalizeResult>;
   };
   review: {
@@ -31,6 +32,7 @@ export interface AnoniDataAPI {
     openExternal: (url: string) => Promise<void>;
     deleteFile: (filePath: string) => Promise<boolean>;
     readPdfFile: (filePath: string) => Promise<ArrayBuffer>;
+    checkPdfType: (filePath: string) => Promise<'text' | 'image'>;
   };
   updater: {
     checkForUpdates: () => Promise<UpdateInfo>;
@@ -64,6 +66,7 @@ export interface FileResult {
   };
   error?: string;
   processingTime: number;
+  warnings?: string[];
 }
 
 export interface DetectOnlyResult {
@@ -80,6 +83,7 @@ export interface FinalizeResult {
   totalApproved?: number;
   totalRejected?: number;
   error?: string;
+  warnings?: string[];
 }
 
 export interface LoadDetectionsResult {
@@ -118,9 +122,9 @@ const api: AnoniDataAPI = {
   },
   process: {
     anonymize: (files: string[]) => ipcRenderer.invoke('process:anonymize', files),
-    detectOnly: (filePath: string) => ipcRenderer.invoke('process:detectOnly', filePath),
-    finalizeAnonymization: (originalFile: string, detectionsPath: string, approvedIndices: number[]) =>
-      ipcRenderer.invoke('process:finalizeAnonymization', originalFile, detectionsPath, approvedIndices),
+    detectOnly: (filePath: string, options?: { skipDetection?: boolean }) => ipcRenderer.invoke('process:detectOnly', filePath, options),
+    finalizeAnonymization: (originalFile: string, detectionsPath: string, approvedIndices: number[], options?: { isImagePdf?: boolean }) =>
+      ipcRenderer.invoke('process:finalizeAnonymization', originalFile, detectionsPath, approvedIndices, options),
   },
   review: {
     loadDetections: (detectionsPath: string) => ipcRenderer.invoke('review:loadDetections', detectionsPath),
@@ -138,6 +142,7 @@ const api: AnoniDataAPI = {
     openExternal: (url: string) => ipcRenderer.invoke('utils:openExternal', url),
     deleteFile: (filePath: string) => ipcRenderer.invoke('utils:deleteFile', filePath),
     readPdfFile: (filePath: string) => ipcRenderer.invoke('utils:readPdfFile', filePath),
+    checkPdfType: (filePath: string) => ipcRenderer.invoke('utils:checkPdfType', filePath),
   },
   updater: {
     checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),

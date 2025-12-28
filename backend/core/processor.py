@@ -71,6 +71,23 @@ class PDFProcessor:
             logger.debug("Limpiando metadatos...")
             self.file_manager.clean_metadata(output_path)
 
+            # 6. Eliminar archivos temporales de una posible revisión manual anterior
+            try:
+                stem = input_path.stem
+                directory = input_path.parent
+                pre_anon_path = directory / f"{stem}_preAnonimizado.pdf"
+                detections_path = directory / f"{stem}_detections.json"
+                
+                import os
+                if pre_anon_path.exists():
+                    os.remove(pre_anon_path)
+                    logger.debug(f"Archivo temporal eliminado: {pre_anon_path.name}")
+                if detections_path.exists():
+                    os.remove(detections_path)
+                    logger.debug(f"Archivo temporal eliminado: {detections_path.name}")
+            except Exception as cleanup_error:
+                logger.warning(f"No se pudieron eliminar archivos temporales: {cleanup_error}")
+
             # Calcular estadísticas
             stats = self._calculate_stats(pii_matches)
 

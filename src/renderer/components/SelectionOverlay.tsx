@@ -83,17 +83,9 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
       height
     }
 
-    // Convertir de pantalla a coordenadas del canvas (solo desescalar)
-    const canvasBBox = screenToPdf(screenRect, pdfPageHeight, scale)
-
-    // Rotar 90° CW (sentido horario) para PDFs con imágenes
-    // Esto corrige que aparezcan en vertical
-    const pdfBBox = {
-      x0: pdfPageHeight - canvasBBox.y1,
-      y0: canvasBBox.x0,
-      x1: pdfPageHeight - canvasBBox.y0,
-      y1: canvasBBox.x1
-    }
+    // Convertir de pantalla a coordenadas PDF (solo desescalar, sin transformaciones de rotación)
+    // PyMuPDF usa directamente las coordenadas del viewport, sin transformaciones adicionales
+    const pdfBBox = screenToPdf(screenRect, pdfPageHeight, scale)
 
     const bbox: [number, number, number, number] = [
       pdfBBox.x0,
@@ -105,11 +97,11 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({
     // DEBUG: Log detallado de la conversión de coordenadas
     console.log('=== SELECCIÓN MANUAL ===')
     console.log('Canvas dimensions:', { width: canvasWidth, height: canvasHeight })
-    console.log('PDF page dimensions (original):', { width: pdfPageWidth, height: pdfPageHeight })
+    console.log('PDF page dimensions:', { width: pdfPageWidth, height: pdfPageHeight })
+    console.log('Page rotation (ignorada):', pageRotation, 'degrees')
     console.log('Scale:', scale)
     console.log('Screen rect:', screenRect)
-    console.log('Canvas bbox (desescalado):', canvasBBox)
-    console.log('PDF bbox (rotado 90° CW):', pdfBBox)
+    console.log('PDF bbox (desescalado):', pdfBBox)
     console.log('Final bbox array:', bbox)
     console.log('=======================')
 

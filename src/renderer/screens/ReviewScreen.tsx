@@ -25,7 +25,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   const [rejectedIndices, setRejectedIndices] = useState<Set<number>>(new Set())
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
-  const [scale, setScale] = useState(1.5)
+  const [scale, setScale] = useState(1.0)
   const [pdfPageHeight, setPdfPageHeight] = useState(0)
   const [pdfPageWidth, setPdfPageWidth] = useState(0)
   const [canvasWidth, setCanvasWidth] = useState(0)
@@ -170,13 +170,9 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   }
 
   const handleDetectionClick = (index: number) => {
-    console.log('Click en detección:', index)
-    console.log('Estado actual - Aprobada:', approvedIndices.has(index), 'Rechazada:', rejectedIndices.has(index))
-
-    // Toggle entre estados: pendiente -> aprobado -> rechazado -> pendiente
+    // Toggle binario: Solo Anonimizar (Aprobado) o Mantener (Rechazado)
     if (approvedIndices.has(index)) {
-      // De aprobado a rechazado
-      console.log('Cambiando de APROBADO a RECHAZADO')
+      // De Aprobado a Rechazado (Mantener) - Color Naranja
       const newApproved = new Set(approvedIndices)
       newApproved.delete(index)
       setApprovedIndices(newApproved)
@@ -184,25 +180,18 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
       const newRejected = new Set(rejectedIndices)
       newRejected.add(index)
       setRejectedIndices(newRejected)
-
-      setOverlayVersion(v => v + 1)
-    } else if (rejectedIndices.has(index)) {
-      // De rechazado a pendiente
-      console.log('Cambiando de RECHAZADO a PENDIENTE')
+    } else {
+      // De Rechazado (o cualquier otro) a Aprobado (Anonimizar) - Color Rojo Cruzado
       const newRejected = new Set(rejectedIndices)
       newRejected.delete(index)
       setRejectedIndices(newRejected)
 
-      setOverlayVersion(v => v + 1)
-    } else {
-      // De pendiente a aprobado
-      console.log('Cambiando de PENDIENTE a APROBADO')
       const newApproved = new Set(approvedIndices)
       newApproved.add(index)
       setApprovedIndices(newApproved)
-
-      setOverlayVersion(v => v + 1)
     }
+
+    setOverlayVersion(v => v + 1)
   }
 
   const handleApproveAll = () => {
@@ -227,8 +216,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   const stats = {
     total: detections.length,
     approved: approvedIndices.size,
-    rejected: rejectedIndices.size,
-    pending: detections.length - approvedIndices.size - rejectedIndices.size
+    rejected: rejectedIndices.size
   }
 
   // Detecciones de la página actual
@@ -257,8 +245,8 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
         {/* Estadísticas */}
         <div className="p-4 bg-gray-50 border-b">
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex items-center justify-between p-2 bg-white rounded">
-              <span className="text-gray-600">Total:</span>
+            <div className="flex items-center justify-between p-2 bg-white rounded col-span-2">
+              <span className="text-gray-600">Total Detecciones:</span>
               <span className="font-semibold">{stats.total}</span>
             </div>
             <div className="flex items-center justify-between p-2 rounded" style={{ backgroundColor: '#fff5f3' }}>
@@ -268,10 +256,6 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
             <div className="flex items-center justify-between p-2 bg-orange-50 rounded">
               <span className="text-orange-700">Mantener:</span>
               <span className="font-semibold text-orange-700">{stats.rejected}</span>
-            </div>
-            <div className="flex items-center justify-between p-2 bg-gray-100 rounded">
-              <span className="text-gray-600">Pendientes:</span>
-              <span className="font-semibold">{stats.pending}</span>
             </div>
           </div>
         </div>
@@ -311,15 +295,13 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
                 return (
                   <div
                     key={detection.index}
-                    className={`p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 scale-on-hover ${
-                      isHovered ? 'ring-2 ring-teal-400 shadow-lg' : 'shadow-md'
-                    } ${
-                      isApproved
+                    className={`p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 scale-on-hover ${isHovered ? 'ring-2 ring-teal-400 shadow-lg' : 'shadow-md'
+                      } ${isApproved
                         ? 'border-2'
                         : isRejected
-                        ? 'bg-amber-50 border-amber-300'
-                        : 'bg-white border-gray-300 hover:border-gray-400 hover:shadow-xl'
-                    }`}
+                          ? 'bg-amber-50 border-amber-300'
+                          : 'bg-white border-gray-300 hover:border-gray-400 hover:shadow-xl'
+                      }`}
                     style={isApproved ? { backgroundColor: '#fff5f3', borderColor: '#FF6B54' } : {}}
                     onClick={() => handleDetectionClick(detection.index)}
                   >
@@ -397,11 +379,10 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsSelectionMode(!isSelectionMode)}
-              className={`px-4 py-2 rounded-lg shadow-md scale-on-hover transition-all ${
-                isSelectionMode
-                  ? 'text-white hover:bg-amber-700 ring-2 ring-amber-300'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
+              className={`px-4 py-2 rounded-lg shadow-md scale-on-hover transition-all ${isSelectionMode
+                ? 'text-white hover:bg-amber-700 ring-2 ring-amber-300'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
               style={isSelectionMode ? { backgroundColor: '#f59e0b' } : {}}
             >
               {isSelectionMode ? 'Modo Selección' : '+ Añadir Área'}

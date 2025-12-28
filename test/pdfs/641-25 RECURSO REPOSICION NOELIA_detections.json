@@ -1,0 +1,142 @@
+[
+  {
+    "index": 0,
+    "type": "NOMBRES_CON_PREFIJO",
+    "text": "Noelia Betancor Ramírez",
+    "bbox": [
+      305.1480407714844,
+      538.2279663085938,
+      428.38787841796875,
+      551.511962890625
+    ],
+    "page_num": 5,
+    "confidence": 1.0,
+    "source": "rule:nombres_con_prefijo"
+  },
+  {
+    "index": 1,
+    "type": "EMAIL",
+    "text": "noelia.plocan@gmail.com",
+    "bbox": [
+      395.9200134277344,
+      192.3880157470703,
+      521.9558715820312,
+      205.67201232910156
+    ],
+    "page_num": 0,
+    "confidence": 1.0,
+    "source": "regex"
+  },
+  {
+    "index": 2,
+    "type": "ADDRESS",
+    "text": "de",
+    "bbox": [
+      90.05000305175781,
+      192.3880157470703,
+      525.1118774414062,
+      205.67201232910156
+    ],
+    "page_num": 0,
+    "confidence": 0.85,
+    "source": "address_detector"
+  },
+  {
+    "index": 3,
+    "type": "NAME_PART",
+    "text": "NOELIA",
+    "bbox": [
+      167.3300018310547,
+      178.6079864501953,
+      214.71800231933594,
+      191.89198303222656
+    ],
+    "page_num": 0,
+    "confidence": 0.7,
+    "source": "name_parts"
+  },
+  {
+    "index": 4,
+    "type": "NAME_PART",
+    "text": "NOELIA",
+    "bbox": [
+      395.9200134277344,
+      192.3880157470703,
+      424.9959716796875,
+      205.67201232910156
+    ],
+    "page_num": 0,
+    "confidence": 0.7,
+    "source": "name_parts"
+  },
+  {
+    "index": 5,
+    "type": "NAME_PART",
+    "text": "BETANCOR",
+    "bbox": [
+      220.5260009765625,
+      178.6079864501953,
+      288.40997314453125,
+      191.89198303222656
+    ],
+    "page_num": 0,
+    "confidence": 0.7,
+    "source": "name_parts"
+  },
+  {
+    "index": 6,
+    "type": "NAME_PART",
+    "text": "RAMÍREZ",
+    "bbox": [
+      294.21795654296875,
+      178.6079864501953,
+      352.17791748046875,
+      191.89198303222656
+    ],
+    "page_num": 0,
+    "confidence": 0.7,
+    "source": "name_parts"
+  },
+  {
+    "index": 7,
+    "type": "NAME_PART",
+    "text": "NOELIA",
+    "bbox": [
+      305.1480407714844,
+      538.2279663085938,
+      337.20001220703125,
+      551.511962890625
+    ],
+    "page_num": 5,
+    "confidence": 0.7,
+    "source": "name_parts"
+  },
+  {
+    "index": 8,
+    "type": "NAME_PART",
+    "text": "BETANCOR",
+    "bbox": [
+      340.6080017089844,
+      538.2279663085938,
+      384.0719299316406,
+      551.511962890625
+    ],
+    "page_num": 5,
+    "confidence": 0.7,
+    "source": "name_parts"
+  },
+  {
+    "index": 9,
+    "type": "NAME_PART",
+    "text": "ramírez",
+    "bbox": [
+      387.81591796875,
+      538.2279663085938,
+      428.38787841796875,
+      551.511962890625
+    ],
+    "page_num": 5,
+    "confidence": 0.7,
+    "source": "name_parts"
+  }
+]

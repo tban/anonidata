@@ -12,7 +12,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
-    optimize=2,
+    optimize=0,  # 0 para compatibilidad con NumPy en Python 3.13
 )
 pyz = PYZ(a.pure)
 
@@ -21,12 +21,12 @@ exe = EXE(
     a.scripts,
     a.binaries,
     a.datas,
-    [('O', None, 'OPTION'), ('O', None, 'OPTION')],
+    [],
     name='anonidata-backend',
     debug=False,
     bootloader_ignore_signals=False,
     strip=True,
-    upx=True,
+    upx=False,  # False en macOS para evitar ENOTDIR
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,

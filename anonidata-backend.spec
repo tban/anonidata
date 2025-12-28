@@ -39,7 +39,24 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=datas_list,
-    hiddenimports=['loguru', 'pypdf', 'PyMuPDF', 'Pillow', 'numpy', 'cv2', 'pytesseract', 'spacy', 'pyzbar', 'spacy.lang.es'],
+    hiddenimports=[
+        'loguru', 'pypdf', 'PyMuPDF', 'Pillow', 'numpy', 'cv2', 'pytesseract', 'pyzbar',
+        # spaCy core modules
+        'spacy', 'spacy.lang.es', 'spacy.parts_of_speech', 'spacy.symbols',
+        'spacy.vocab', 'spacy.tokens', 'spacy.tokens.doc', 'spacy.tokens.span',
+        'spacy.tokens.token', 'spacy.tokenizer', 'spacy.matcher', 'spacy.matcher.matcher',
+        'spacy.attrs', 'spacy.lexeme', 'spacy.strings', 'spacy.morphology',
+        'spacy.pipeline', 'spacy.pipeline.ner', 'spacy.pipeline.tagger',
+        'spacy.pipeline.entityruler', 'spacy.pipeline.sentencizer',
+        'spacy.kb', 'spacy.util', 'spacy.lookups',
+        # thinc (spacy dependency)
+        'thinc', 'thinc.api', 'thinc.config', 'thinc.model', 'thinc.layers',
+        # Additional spacy internals
+        'spacy.training', 'spacy.scorer', 'spacy.displacy', 'spacy.cli',
+        'cymem', 'cymem.cymem', 'preshed', 'preshed.maps', 'murmurhash',
+        'blis', 'blis.py', 'srsly', 'srsly.msgpack', 'srsly.json_wrapper',
+        'wasabi', 'catalogue', 'confection',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

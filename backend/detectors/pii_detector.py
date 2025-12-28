@@ -403,6 +403,74 @@ class PIIDetector:
                         )
                     )
 
+            # Nombres con tratamiento formal o firma (D./Doña/Fdo.)
+            # RESTRICCIÓN SOLICITADA: Solo detectar si aparece uno de estos prefijos
+            if self.settings.detect_names:
+                # Patrón para tratamientos y firmas:
+                # D., Don, Doña, Dña., Sr., Sra., Dr., Dra., Fdo., Fdo:, Firmado, El Sr., La Sra.
+                prefixes = [
+                    r'D\.', r'Don', r'Doña', r'Dña\.', 
+                    r'Sr\.', r'Sra\.', r'Dr\.', r'Dra\.',
+                    r'Fdo\.', r'Fdo:', r'Firmado', r'Firmado:', r'Firma',
+                    r'El\s+Sr\.', r'La\s+Sra\.', r'El\s+Dr\.', r'La\s+Dra\.'
+                ]
+                prefix_pattern = '|'.join(prefixes)
+                
+                # Regex Explicación:
+                # Grupo 1 (Tratamiento): Uno de los prefijos definidos + espacios opcionales
+                # Grupo 2 (Nombre):
+                #   - Empieza con Mayúscula/Letra
+                #   - Permite palabras conectadas por espacios
+                #   - Permite conectores (de, del, la...)
+                #   - Longitud 1-6 palabras
+                formal_name_pattern = re.compile(
+                    r'\b((?:' + prefix_pattern + r')\s*)' + 
+                    r'([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñA-ZÁÉÍÓÚÜÑ]+(?:\s+(?:de|del|la|los|las|y|[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñA-ZÁÉÍÓÚÜÑ]+)){1,6})',
+                    re.UNICODE | re.IGNORECASE
+                )
+
+                for match in formal_name_pattern.finditer(text):
+                    # Redactar solo el nombre (Grupo 2)
+                    name_text = match.group(2)
+                    
+                    # Validaciones extra para el nombre capturado
+                    # Si contiene números o caracteres extraños, ignorar
+                    if re.search(r'\d', name_text): 
+                        continue
+                        
+                    # Calcular bbox precisa solo para el nombre
+                    precise_bbox = block.bbox
+                    if doc_pdf:
+                        try:
+                            page = doc_pdf[block.page_num]
+                            # Buscar el nombre exacto en la página
+                            text_instances = page.search_for(name_text)
+
+                            if text_instances:
+                                found = False
+                                for rect in text_instances:
+                                    if self._rect_inside_bbox(rect, block.bbox):
+                                        precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+                                        found = True
+                                        break
+
+                                if not found and text_instances:
+                                    rect = text_instances[0]
+                                    precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
+                        except Exception as e:
+                            logger.warning(f"Error calculando bbox precisa para Nombre Formal: {e}")
+
+                    matches.append(
+                        PIIMatch(
+                            type="PERSON",
+                            text=name_text,
+                            bbox=precise_bbox,
+                            page_num=block.page_num,
+                            confidence=0.95,  # Alta confianza por el tratamiento explícito
+                            source="regex_formal",
+                        )
+                    )
+
         # Cerrar el PDF si lo abrimos
         if doc_pdf:
             doc_pdf.close()
@@ -410,178 +478,23 @@ class PIIDetector:
         return matches
 
     def _detect_with_ner(self, text_blocks: List[TextBlock]) -> List[PIIMatch]:
-        """Detecta PII usando NER de spaCy (solo nombres de personas)"""
+        """
+        Detecta PII usando NER de spaCy.
+        
+        NOTA: A petición del usuario, se ha DESACTIVADO la detección genérica de nombres de personas.
+        Solo se detectan nombres si van precedidos de un tratamiento formal (D., Fdo., etc.)
+        mediante regex.
+        
+        Se mantiene el método por si se requiere reactivar o para otros tipos de entidades en el futuro.
+        """
         if not self.nlp:
             logger.warning("_detect_with_ner llamado pero self.nlp es None")
             return []
 
         matches = []
-        total_entities = 0
-
-        # Lista de palabras que NO son nombres de personas (falsos positivos comunes)
-        false_positives = {
-            # Cargos y roles
-            'jefe', 'jefa', 'director', 'directora', 'gerente', 'responsable',
-            'coordinador', 'coordinadora', 'técnico', 'técnica', 'secretario',
-            'secretaria', 'presidente', 'presidenta', 'vocal', 'empleado', 'empleada',
-            'jefe de sección', 'jefa de sección', 'secretario general',
-            # Números ordinales
-            'primero', 'segundo', 'tercero', 'cuarto', 'quinto', 'sexto',
-            'séptimo', 'octavo', 'noveno', 'décimo',
-            'primera', 'segunda', 'tercera', 'cuarta', 'quinta', 'sexta',
-            'séptima', 'octava', 'novena', 'décima',
-            # Términos administrativos
-            'interesado', 'interesada', 'solicitante', 'titular', 'beneficiario',
-            'beneficiaria', 'representante', 'apoderado', 'apoderada',
-            # Abreviaturas de firma
-            'fdo', 'fdo.', 'firmado', 'firma', 'atentamente', 'atte', 'atte.',
-            # Títulos y tratamientos
-            'don', 'd.', 'doña', 'dña', 'dña.', 'sr', 'sr.', 'sra', 'sra.',
-            # Términos legales/administrativos
-            'desestima', 'estima', 'aprueba', 'deniega', 'concede', 'válida', 'válido',
-            'anula', 'nula', 'nulo', 'resuelve', 'acuerda', 'declara',
-            # Términos organizativos
-            'general', 'dirección', 'servicio', 'área', 'departamento', 'sección',
-            # Términos conceptuales/jurídicos (NO son personas)
-            'supremacía', 'doctrina', 'enriquecimiento', 'cobro', 'derecho',
-            'c. supremacía', 'b. doctrina',
-        }
-
-        # Palabras clave de direcciones (para filtrar false positives del NER)
-        address_keywords_filter = [
-            'calle', 'c/', 'avenida', 'avda', 'av.', 'plaza', 'pl.',
-            'paseo', 'pº', 'camino', 'cam.', 'carretera', 'ctra.',
-            'travesía', 'trv.', 'urbanización', 'urb.', 'glorieta',
-            'ronda', 'vía', 'domicilio', 'dirección'
-        ]
-
-        # Abrir el PDF para calcular bboxes precisas
-        doc_pdf = None
-        if self.pdf_path:
-            try:
-                import fitz
-                doc_pdf = fitz.open(self.pdf_path)
-            except Exception as e:
-                logger.warning(f"No se pudo abrir PDF para cálculo preciso de bboxes: {e}")
-
-        for block in text_blocks:
-            doc = self.nlp(block.text)
-
-            # Log de todas las entidades encontradas para debug
-            if doc.ents:
-                total_entities += len(doc.ents)
-                logger.debug(f"Página {block.page_num}: Encontradas {len(doc.ents)} entidades: {[(e.text, e.label_) for e in doc.ents]}")
-
-            for ent in doc.ents:
-                # Nombres de personas - detectar entidades PER, y también MISC/ORG que parezcan nombres
-                # Esto es necesario porque spaCy detecta nombres en MAYÚSCULAS como ORG o MISC
-                is_potential_name = False
-
-                if ent.label_ == "PER" and self.settings.detect_names:
-                    is_potential_name = True
-                elif (ent.label_ in ["MISC", "ORG"]) and self.settings.detect_names:
-                    # Verificar si parece un nombre de persona:
-                    # - Tiene múltiples palabras con primera letra mayúscula
-                    # - O está en MAYÚSCULAS y tiene al menos 2 palabras
-                    # - Y no contiene palabras comunes de organizaciones/direcciones/documentos
-                    words = ent.text.split()
-                    text_lower = ent.text.lower()
-
-                    # Palabras clave para filtrar (organizaciones, direcciones, documentos)
-                    org_keywords = ['servicio', 'ministerio', 'dirección', 'consejería', 'departamento',
-                                   'hospital', 'ayuntamiento', 'junta', 'gobierno', 'cabildo']
-                    doc_keywords = ['dni', 'nif', 'nie', 'número', 'núm', 'nº']
-                    address_start_keywords = ['calle', 'c/', 'avenida', 'avda', 'av.', 'plaza', 'pl.',
-                                            'paseo', 'pº', 'camino', 'carretera', 'urbanización', 'urb.']
-
-                    # Verificar que no contenga palabras típicas de organizaciones
-                    has_org_keyword = any(kw in text_lower for kw in org_keywords)
-                    has_doc_keyword = any(kw in text_lower for kw in doc_keywords)
-                    starts_with_address = any(text_lower.startswith(kw) or f" {kw}" in text_lower for kw in address_start_keywords)
-
-                    # Filtrar si contiene números (excepto si es parte del nombre, muy raro)
-                    has_numbers = any(c.isdigit() for c in ent.text)
-
-                    if not has_org_keyword and not has_doc_keyword and not starts_with_address and not has_numbers and len(words) >= 2:
-                        # Si son 2-6 palabras y algunas están capitalizadas, probablemente es un nombre
-                        capitalized_words = [w for w in words if w and (w[0].isupper() or w.isupper())]
-                        if len(capitalized_words) >= 2 and len(words) <= 6:  # Limitar a máximo 6 palabras
-                            is_potential_name = True
-                            logger.debug(f"Detectado nombre en entidad {ent.label_}: '{ent.text}' en página {block.page_num}")
-
-                if not is_potential_name:
-                    continue
-
-                # Filtrar falsos positivos
-                entity_text_lower = ent.text.lower().strip()
-
-                # Saltar si es un falso positivo conocido
-                if entity_text_lower in false_positives:
-                    logger.debug(f"Filtrado falso positivo: '{ent.text}' en página {block.page_num}")
-                    continue
-
-                # Saltar si contiene palabras clave de direcciones
-                # Ej: "Calle Matos", "Plaza Mayor"
-                contains_address_keyword = False
-                for keyword in address_keywords_filter:
-                    if keyword in entity_text_lower:
-                        logger.debug(f"Filtrado dirección como persona: '{ent.text}' (contiene '{keyword}') en página {block.page_num}")
-                        contains_address_keyword = True
-                        break
-                if contains_address_keyword:
-                    continue
-
-                # Saltar si solo es una palabra y parece un cargo (no tiene apellido)
-                # Los nombres reales suelen tener al menos 2 palabras
-                words = ent.text.split()
-                if len(words) == 1 and entity_text_lower in false_positives:
-                    logger.debug(f"Filtrado palabra única no válida: '{ent.text}' en página {block.page_num}")
-                    continue
-
-                # Calcular bbox precisa si tenemos el PDF abierto
-                precise_bbox = block.bbox
-                if doc_pdf:
-                    try:
-                        page = doc_pdf[block.page_num]
-                        text_instances = page.search_for(ent.text)
-
-                        if text_instances:
-                            # Si hay múltiples instancias, usar la que esté dentro del block_bbox
-                            found = False
-                            for rect in text_instances:
-                                if self._rect_inside_bbox(rect, block.bbox):
-                                    precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
-                                    found = True
-                                    break
-
-                            # Si ninguna está dentro, usar la primera
-                            if not found:
-                                rect = text_instances[0]
-                                precise_bbox = (rect.x0, rect.y0, rect.x1, rect.y1)
-
-                            logger.debug(f"Bbox precisa calculada para '{ent.text}': {precise_bbox}")
-                        else:
-                            logger.debug(f"No se encontró bbox precisa para '{ent.text}', usando bbox del bloque")
-                    except Exception as e:
-                        logger.warning(f"Error calculando bbox precisa para '{ent.text}': {e}")
-
-                logger.debug(f"Detectado nombre válido: '{ent.text}' en página {block.page_num}")
-                matches.append(
-                    PIIMatch(
-                        type="PERSON",
-                        text=ent.text,
-                        bbox=precise_bbox,
-                        page_num=block.page_num,
-                        confidence=0.9,
-                        source="ner",
-                    )
-                )
-
-        # Cerrar el PDF si lo abrimos
-        if doc_pdf:
-            doc_pdf.close()
-
-        logger.debug(f"NER procesó bloques y encontró {total_entities} entidades totales, {len(matches)} son personas (PER) válidas")
+        # LOGICA NER DESACTIVADA PARA PERSONAS
+        # Para reactivar, restaurar el bucle sobre doc.ents verificando ent.label_ == "PER"
+        
         return matches
 
     def _detect_addresses(self, text_blocks: List[TextBlock]) -> List[PIIMatch]:
