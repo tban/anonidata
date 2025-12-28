@@ -89,8 +89,8 @@
     ],
     "extraResources": [
       {
-        "from": "backend/dist/anonidata-backend",
-        "to": "backend"
+        "from": "dist/anonidata-backend",
+        "to": "anonidata-backend"
       }
     ],
     "mac": {
