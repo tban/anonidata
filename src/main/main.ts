@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, session, nativeImage, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const log = require('electron-log');
 const Store = require('electron-store');
 const { spawn } = require('child_process');
@@ -134,16 +135,41 @@ function createWindow() {
 // Iniciar proceso Python y esperar señal READY
 function startPythonBackend(): Promise<ChildProcessType> {
   return new Promise((resolve, reject) => {
+    const backendExe = process.platform === 'win32' ? 'anonidata-backend.exe' : 'anonidata-backend';
     const pythonPath = isDev
       ? path.join(app.getAppPath(), 'backend/main.py')
-      : path.join((process as any).resourcesPath, 'anonidata-backend');
+      : path.join((process as any).resourcesPath, backendExe);
 
     log.info(`Iniciando backend Python: ${pythonPath}`);
+    log.info(`Plataforma: ${process.platform}, isDev: ${isDev}`);
 
     const pythonExecutable = isDev
-      ? path.join(app.getAppPath(), 'backend/venv/bin/python3')
+      ? (process.platform === 'win32'
+        ? path.join(app.getAppPath(), 'backend/venv/Scripts/python.exe')
+        : path.join(app.getAppPath(), 'backend/venv/bin/python3'))
       : pythonPath;
     const args = isDev ? [pythonPath] : [];
+
+    // Verificar que el ejecutable existe antes de intentar spawn
+    if (!fs.existsSync(pythonExecutable)) {
+      const errorMsg = `Backend no encontrado en: ${pythonExecutable}`;
+      log.error(errorMsg);
+
+      // Listar contenido de resourcesPath para diagnóstico
+      if (!isDev) {
+        try {
+          const resourceFiles = fs.readdirSync((process as any).resourcesPath);
+          log.error(`Contenido de resourcesPath: ${JSON.stringify(resourceFiles)}`);
+        } catch (e) {
+          log.error('No se pudo listar resourcesPath');
+        }
+      }
+
+      reject(new Error(errorMsg));
+      return;
+    }
+
+    log.info(`Ejecutando: ${pythonExecutable} ${args.join(' ')}`);
 
     pythonProcess = spawn(pythonExecutable, args, {
       stdio: ['pipe', 'pipe', 'pipe'],

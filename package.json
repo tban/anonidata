@@ -17,7 +17,7 @@
     "build": "npm run build:renderer && npm run build:main && npm run build:backend",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
-    "build:backend": "venv/bin/pyinstaller --clean anonidata-backend.spec",
+    "build:backend": "node -e \"const p=process.platform==='win32'?'venv/Scripts/pyinstaller':'venv/bin/pyinstaller';require('child_process').execSync(p+' --clean anonidata-backend.spec',{stdio:'inherit'})\"",
     "package": "electron-forge package",
     "package:win": "electron-builder --win --x64",
     "package:mac": "electron-builder --mac --universal",
@@ -27,7 +27,8 @@
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "start": "electron-forge start",
-    "make": "electron-forge make"
+    "make": "electron-forge make",
+    "release:win": "node build.js"
   },
   "dependencies": {
     "electron-is-dev": "^3.0.1",
@@ -58,6 +59,7 @@
     "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.2",
     "electron": "^39.2.4",
+    "electron-builder": "^26.8.1",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "png-to-ico": "^3.0.1",
@@ -89,8 +91,12 @@
     ],
     "extraResources": [
       {
-        "from": "dist/anonidata-backend",
-        "to": "anonidata-backend"
+        "from": "dist",
+        "to": ".",
+        "filter": [
+          "anonidata-backend",
+          "anonidata-backend.exe"
+        ]
       }
     ],
     "mac": {
@@ -98,18 +104,11 @@
         {
           "target": "dmg",
           "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
+            "universal"
           ]
         }
       ],
+      "x64ArchFiles": "Contents/Resources/{anonidata-backend,app.asar.unpacked/**/*.node}",
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
@@ -120,12 +119,6 @@
     },
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
         {
           "target": "portable",
           "arch": [
@@ -150,6 +143,9 @@
       ],
       "category": "Office",
       "icon": "build/icon.icns"
+    },
+    "portable": {
+      "splashImage": null
     }
   }
 }

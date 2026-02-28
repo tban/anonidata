@@ -72,24 +72,29 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-# MODO ONEFILE: Un solo ejecutable con todo incluido
+import sys as _sys
+
+# Configuración por plataforma
+_is_windows = _sys.platform == 'win32'
+_is_mac = _sys.platform == 'darwin'
+
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.datas,
-    [('O', None, 'OPTION'), ('O', None, 'OPTION')],
+    [('O', None, 'OPTION'), ('O', None, 'OPTION')] if not _is_windows else [],
     name='anonidata-backend',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,
+    strip=not _is_windows,  # strip no funciona en Windows
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch='arm64',
+    target_arch='arm64' if _is_mac else None,
     codesign_identity=None,
     entitlements_file=None,
 )

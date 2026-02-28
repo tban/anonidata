@@ -1,0 +1,183 @@
+name: Build macOS Universal
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Incrementar build number'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'backend/**'
+      - 'package.json'
+      - '.github/workflows/build-mac.yml'
+
+# Evitar builds concurrentes
+concurrency:
+  group: build-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14  # Apple Silicon (M1/M2)
+    timeout-minutes: 45
+
+    steps:
+      # =========================================
+      # 1. CHECKOUT Y SETUP
+      # =========================================
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      # =========================================
+      # 2. BACKEND PYTHON (PyInstaller)
+      # =========================================
+      - name: Crear entorno virtual Python
+        run: |
+          cd backend
+          python3 -m venv venv
+          echo "✓ Entorno virtual creado"
+
+      - name: Instalar dependencias Python
+        run: |
+          cd backend
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          echo "✓ Dependencias Python instaladas"
+
+      - name: Descargar modelo spaCy
+        run: |
+          cd backend
+          source venv/bin/activate
+          python -m spacy download es_core_news_sm
+          echo "✓ Modelo spaCy descargado"
+
+      - name: Compilar backend con PyInstaller
+        run: |
+          cd backend
+          source venv/bin/activate
+
+          echo "========================================="
+          echo "Compilando backend Python para macOS"
+          echo "========================================="
+
+          pyinstaller --clean anonidata-backend.spec
+
+          # Verificar que el ejecutable se creó
+          if [ -f "dist/anonidata-backend" ]; then
+            SIZE=$(du -h "dist/anonidata-backend" | cut -f1)
+            echo "✓ Backend compilado: anonidata-backend ($SIZE)"
+          else
+            echo "✗ Error: No se generó anonidata-backend"
+            ls -la dist/ || true
+            exit 1
+          fi
+
+      - name: Copiar backend al directorio dist del proyecto
+        run: |
+          mkdir -p dist
+          cp backend/dist/anonidata-backend dist/anonidata-backend
+          chmod +x dist/anonidata-backend
+          echo "✓ Backend copiado a dist/anonidata-backend"
+          ls -lh dist/anonidata-backend
+
+      # =========================================
+      # 3. FRONTEND ELECTRON (Vite + TypeScript)
+      # =========================================
+      - name: Instalar dependencias Node.js
+        run: npm ci
+
+      - name: Compilar renderer (Vite)
+        run: npm run build:renderer
+
+      - name: Compilar main process (TypeScript)
+        run: npm run build:main
+
+      # =========================================
+      # 4. EMPAQUETAR CON ELECTRON-BUILDER
+      # =========================================
+      - name: Empaquetar aplicación macOS (DMG universal)
+        run: |
+          echo "========================================="
+          echo "Empaquetando con electron-builder (DMG universal)"
+          echo "========================================="
+
+          # Verificar que dist/ tiene los archivos necesarios
+          echo ""
+          echo "Contenido de dist/:"
+          ls -lh dist/
+
+          # Ejecutar electron-builder
+          npx electron-builder --mac --universal
+
+          echo ""
+          echo "✓ Empaquetado completado"
+
+      - name: Verificar artefactos generados
+        run: |
+          echo "========================================="
+          echo "Artefactos en release/:"
+          echo "========================================="
+
+          if [ -d "release" ]; then
+            find release -name "*.dmg" -o -name "*.zip" | while read f; do
+              SIZE=$(du -h "$f" | cut -f1)
+              echo "  → $(basename $f) ($SIZE)"
+            done
+          else
+            echo "✗ Directorio release/ no encontrado"
+            exit 1
+          fi
+
+      # =========================================
+      # 5. SUBIR ARTEFACTOS
+      # =========================================
+      - name: Subir DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnoniData-macOS-Universal-DMG
+          path: release/*.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+      # =========================================
+      # 6. RESUMEN
+      # =========================================
+      - name: Resumen del build
+        run: |
+          echo ""
+          echo "========================================"
+          echo "🚀 BUILD macOS UNIVERSAL COMPLETADO"
+          echo "========================================"
+          echo ""
+          VERSION=$(node -p "require('./package.json').version")
+          PRODUCT=$(node -p "require('./package.json').productName")
+          echo "  Versión: $VERSION"
+          echo "  Producto: $PRODUCT"
+          echo ""
+          echo "  Artefactos disponibles para descarga"
+          echo "  en la pestaña Actions → Artifacts"
+          echo ""
+          echo "========================================"

@@ -3,26 +3,21 @@
 import sys
 from pathlib import Path
 
-# Detectar plataforma
-_is_windows = sys.platform == 'win32'
-_is_mac = sys.platform == 'darwin'
-
 # Encontrar la ubicación del modelo spaCy
 spacy_model_path = None
 try:
     import spacy
-    for model_name in ['es_core_news_lg', 'es_core_news_sm']:
+    try:
+        nlp = spacy.load("es_core_news_lg")
+        spacy_model_path = Path(nlp._path)
+    except:
         try:
-            nlp = spacy.load(model_name)
+            nlp = spacy.load("es_core_news_sm")
             spacy_model_path = Path(nlp._path)
-            print(f"✓ Modelo spaCy encontrado: {model_name}")
-            break
         except:
-            continue
-    if not spacy_model_path:
-        print("⚠ No se encontró ningún modelo spaCy")
+            print("ADVERTENCIA: No se encontró modelo spaCy")
 except:
-    print("⚠ spaCy no disponible")
+    print("ADVERTENCIA: spaCy no disponible")
 
 # Construir lista de datas
 datas_list = [
@@ -33,7 +28,9 @@ datas_list = [
 if spacy_model_path and spacy_model_path.exists():
     model_name = spacy_model_path.name
     datas_list.append((str(spacy_model_path), f'spacy/data/{model_name}'))
-    print(f"✓ Incluyendo modelo spaCy desde: {spacy_model_path}")
+    print(f"✓ Incluyendo modelo spaCy: {model_name} desde {spacy_model_path}")
+else:
+    print("⚠ Modelo spaCy no encontrado - NER no estará disponible")
 
 a = Analysis(
     ['main.py'],
@@ -42,7 +39,7 @@ a = Analysis(
     datas=datas_list,
     hiddenimports=[
         'loguru', 'pypdf', 'PyMuPDF', 'Pillow', 'numpy', 'cv2', 'pytesseract', 'pyzbar',
-        # spaCy
+        # spaCy core modules
         'spacy', 'spacy.lang.es', 'spacy.parts_of_speech', 'spacy.symbols',
         'spacy.vocab', 'spacy.tokens', 'spacy.tokens.doc', 'spacy.tokens.span',
         'spacy.tokens.token', 'spacy.tokenizer', 'spacy.matcher', 'spacy.matcher.matcher',
@@ -50,10 +47,10 @@ a = Analysis(
         'spacy.pipeline', 'spacy.pipeline.ner', 'spacy.pipeline.tagger',
         'spacy.pipeline.entityruler', 'spacy.pipeline.sentencizer',
         'spacy.kb', 'spacy.util', 'spacy.lookups',
-        'spacy.training', 'spacy.scorer', 'spacy.displacy', 'spacy.cli',
-        # thinc
+        # thinc (spacy dependency)
         'thinc', 'thinc.api', 'thinc.config', 'thinc.model', 'thinc.layers',
-        # spacy deps
+        # Additional spacy internals
+        'spacy.training', 'spacy.scorer', 'spacy.displacy', 'spacy.cli',
         'cymem', 'cymem.cymem', 'preshed', 'preshed.maps', 'murmurhash',
         'blis', 'blis.py', 'srsly', 'srsly.msgpack', 'srsly.json_wrapper',
         'wasabi', 'catalogue', 'confection',
@@ -73,23 +70,24 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# MODO ONEFILE: Un solo ejecutable con todo incluido
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.datas,
-    [] if _is_windows else [('O', None, 'OPTION'), ('O', None, 'OPTION')],
+    [],
     name='anonidata-backend',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=not _is_windows,  # strip no funciona en Windows
+    strip=False,   # strip no funciona en Windows
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=True,   # True para poder leer stdout/stderr
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch='arm64' if _is_mac else None,
+    # Sin target_arch: usa la arquitectura nativa del sistema
     codesign_identity=None,
     entitlements_file=None,
 )
