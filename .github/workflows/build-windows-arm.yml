@@ -2,22 +2,29 @@ name: Build Windows ARM64
 
 on:
   workflow_dispatch:
-  # Deshabilitado temporalmente hasta solucionar x64
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'src/**'
-  #     - 'backend/**'
-  #     - 'package.json'
-  #     - 'forge.config.windows-arm.js'
-  #     - '.github/workflows/build-windows-arm.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'backend/**'
+      - 'package.json'
+      - '.github/workflows/build-windows-arm.yml'
+
+# Evitar builds concurrentes
+concurrency:
+  group: build-windows-arm-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 45
 
     steps:
+      # =========================================
+      # 1. CHECKOUT Y SETUP
+      # =========================================
       - name: Checkout código
         uses: actions/checkout@v4
 
@@ -32,123 +39,154 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
 
+      # =========================================
+      # 2. BACKEND PYTHON (PyInstaller x64)
+      # El backend x64 corre en ARM64 vía emulación WoW64
+      # (Windows 11 ARM soporta binarios x64 nativamente)
+      # =========================================
       - name: Crear entorno virtual Python
+        shell: pwsh
         run: |
           cd backend
           python -m venv venv
+          Write-Host "✓ Entorno virtual creado"
 
       - name: Instalar dependencias Python
+        shell: pwsh
         run: |
           cd backend
           .\venv\Scripts\activate
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          Write-Host "✓ Dependencias Python instaladas"
 
       - name: Descargar modelo spaCy
+        shell: pwsh
         run: |
           cd backend
           .\venv\Scripts\activate
           python -m spacy download es_core_news_sm
+          Write-Host "✓ Modelo spaCy descargado"
 
       - name: Compilar backend con PyInstaller
+        shell: pwsh
         run: |
           cd backend
           .\venv\Scripts\activate
 
-          # Crear spec file para Windows si no existe
-          if (Test-Path anonidata-backend.spec) {
-            # Usar spec existente
+          Write-Host "========================================="
+          Write-Host "Compilando backend Python (x64 para emulación en ARM64)"
+          Write-Host "========================================="
+
+          if (Test-Path "anonidata-backend-win.spec") {
+            Write-Host "Usando spec de Windows: anonidata-backend-win.spec"
+            pyinstaller --clean anonidata-backend-win.spec
+          } elseif (Test-Path "anonidata-backend.spec") {
+            Write-Host "Usando spec genérico: anonidata-backend.spec"
             pyinstaller --clean anonidata-backend.spec
           } else {
-            # Crear build básico
+            Write-Host "No se encontró .spec - creando build directo"
             pyinstaller --onefile --console --name anonidata-backend --add-data "config;config" main.py
           }
 
-          # Verificar que el ejecutable se creó
-          if (Test-Path dist\anonidata-backend.exe) {
-            Write-Host "Backend compilado correctamente: dist\anonidata-backend.exe"
-            Get-Item dist\anonidata-backend.exe | Select-Object Name, Length
+          if (Test-Path "dist\anonidata-backend.exe") {
+            $fileInfo = Get-Item "dist\anonidata-backend.exe"
+            $sizeMB = [math]::Round($fileInfo.Length / 1MB, 2)
+            Write-Host "✓ Backend compilado: anonidata-backend.exe ($sizeMB MB)"
           } else {
-            Write-Error "Error: No se generó el ejecutable del backend"
+            Write-Error "✗ Error: No se generó anonidata-backend.exe"
+            Get-ChildItem -Recurse dist\ | Select-Object FullName, Length
             exit 1
           }
 
-      - name: Copiar backend a dist del proyecto
+      - name: Copiar backend al directorio dist del proyecto
+        shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist
-          Copy-Item backend\dist\anonidata-backend.exe dist\anonidata-backend.exe
-          Write-Host "Backend copiado a dist/"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "backend\dist\anonidata-backend.exe" "dist\anonidata-backend.exe" -Force
+          Write-Host "✓ Backend copiado a dist\anonidata-backend.exe"
 
+      # =========================================
+      # 3. FRONTEND ELECTRON (Vite + TypeScript)
+      # =========================================
       - name: Instalar dependencias Node.js
         run: npm ci
 
-      - name: Compilar renderer
+      - name: Compilar renderer (Vite)
         run: npm run build:renderer
 
-      - name: Compilar main process
+      - name: Compilar main process (TypeScript)
         run: npm run build:main
 
-      - name: Preparar configuración para Windows ARM64
+      # =========================================
+      # 4. EMPAQUETAR CON ELECTRON-BUILDER (ARM64)
+      # =========================================
+      - name: Empaquetar aplicación Windows ARM64 (portable)
+        shell: pwsh
         run: |
           Write-Host "========================================="
-          Write-Host "Preparando configuración de Electron Forge para Windows ARM64"
+          Write-Host "Empaquetando con electron-builder (portable ARM64)"
           Write-Host "========================================="
 
-          # Verificar que existe forge.config.windows-arm.js
-          if (-not (Test-Path forge.config.windows-arm.js)) {
-            Write-Error "forge.config.windows-arm.js no encontrado!"
-            exit 1
-          }
+          Write-Host "`nContenido de dist/:"
+          Get-ChildItem dist\ | Select-Object Name, Length
 
-          # Backup de forge.config.js original (macOS)
-          if (Test-Path forge.config.js) {
-            Write-Host "Respaldando forge.config.js original (macOS)"
-            Copy-Item forge.config.js forge.config.mac.backup.js
-          }
+          # electron-builder con target ARM64
+          npx electron-builder --win --arm64
 
-          # Copiar configuración de Windows ARM64 como forge.config.js
-          Write-Host "Copiando forge.config.windows-arm.js a forge.config.js"
-          Copy-Item forge.config.windows-arm.js forge.config.js
-
-          Write-Host "Contenido de forge.config.js (Windows ARM64):"
-          Get-Content forge.config.js
-          Write-Host "========================================="
-
-      - name: Empaquetar aplicación para Windows ARM64
-        run: |
-          Write-Host "Iniciando empaquetado con Electron Forge..."
-          Write-Host "Platform: win32"
-          Write-Host "Arch: arm64"
-          npx electron-forge make --arch=arm64 --platform=win32
+          Write-Host "`n✓ Empaquetado completado"
 
       - name: Verificar artefactos generados
+        shell: pwsh
         run: |
-          Write-Host "Contenido de out/make:"
-          Get-ChildItem -Recurse out/make | Select-Object FullName, Length
+          Write-Host "========================================="
+          Write-Host "Artefactos en release/:"
+          Write-Host "========================================="
 
-      - name: Subir ZIP portable ARM64
-        uses: actions/upload-artifact@v4
-        with:
-          name: Anonidata-Windows-ARM64-Portable
-          path: out/make/zip/win32/arm64/*.zip
-          if-no-files-found: error
-
-      - name: Resumen del build
-        run: |
-          Write-Host "========================================"
-          Write-Host "Build completado para Windows ARM64"
-          Write-Host "========================================"
-          Write-Host ""
-          Write-Host "NOTA: Solo se genera ZIP para ARM64 (Squirrel no es compatible)"
-          Write-Host ""
-          Write-Host "Artefactos generados:"
-
-          if (Test-Path out/make/zip/win32/arm64/*.zip) {
-            Get-Item out/make/zip/win32/arm64/*.zip | ForEach-Object {
-              Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)"
+          if (Test-Path "release") {
+            Get-ChildItem -Recurse release\* -Include *.exe,*.zip,*.msi | ForEach-Object {
+              $sizeMB = [math]::Round($_.Length / 1MB, 2)
+              Write-Host "  → $($_.Name) ($sizeMB MB)"
             }
           } else {
-            Write-Error "No se encontro archivo ZIP generado"
+            Write-Error "Directorio release/ no encontrado"
             exit 1
           }
+
+      # =========================================
+      # 5. SUBIR ARTEFACTOS
+      # =========================================
+      - name: Subir ejecutable portable ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnoniData-Windows-ARM64-Portable
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      # =========================================
+      # 6. RESUMEN
+      # =========================================
+      - name: Resumen del build
+        shell: pwsh
+        run: |
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "🚀 BUILD WINDOWS ARM64 COMPLETADO"
+          Write-Host "========================================"
+          Write-Host ""
+
+          $packageJson = Get-Content "package.json" | ConvertFrom-Json
+          Write-Host "  Versión: $($packageJson.version)"
+          Write-Host "  Producto: $($packageJson.productName)"
+          Write-Host "  Arquitectura: ARM64 (backend x64 emulado vía WoW64)"
+          Write-Host ""
+          Write-Host "  NOTA: El backend Python corre como x64 bajo emulación"
+          Write-Host "  en Windows 11 ARM. Esto es totalmente compatible."
+          Write-Host ""
+          Write-Host "  Artefactos disponibles para descarga"
+          Write-Host "  en la pestaña Actions → Artifacts"
+          Write-Host ""
+          Write-Host "========================================"

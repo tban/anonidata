@@ -23,9 +23,9 @@ concurrency:
 
 jobs:
   # =========================================
-  # JOB 1: BUILD WINDOWS
+  # JOB 1: BUILD WINDOWS x64
   # =========================================
-  build-windows:
+  build-windows-x64:
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -68,7 +68,7 @@ jobs:
             Write-Error "Backend no compilado"
             exit 1
           }
-          Write-Host "✓ Backend Windows compilado"
+          Write-Host "✓ Backend Windows x64 compilado"
 
       - name: Copiar backend y compilar Electron
         shell: pwsh
@@ -83,24 +83,99 @@ jobs:
       - name: Renombrar artefacto
         shell: pwsh
         run: |
-          # Buscar el .exe portable generado
           $exeFiles = Get-ChildItem "release\*.exe" -ErrorAction SilentlyContinue
           if ($exeFiles) {
-            $target = "release\AnoniData.exe"
+            $target = "release\AnoniData-x64.exe"
             Copy-Item $exeFiles[0].FullName $target -Force
-            Write-Host "✓ Renombrado a AnoniData.exe"
+            Write-Host "✓ Renombrado a AnoniData-x64.exe"
           }
 
-      - name: Subir artefacto Windows
+      - name: Subir artefacto Windows x64
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: release/AnoniData.exe
+          name: windows-x64-build
+          path: release/AnoniData-x64.exe
           if-no-files-found: error
           retention-days: 5
 
   # =========================================
-  # JOB 2: BUILD macOS
+  # JOB 2: BUILD WINDOWS ARM64
+  # =========================================
+  build-windows-arm64:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Compilar backend Python (x64 para emulación WoW64)
+        shell: pwsh
+        run: |
+          cd backend
+          python -m venv venv
+          .\venv\Scripts\activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m spacy download es_core_news_sm
+
+          if (Test-Path "anonidata-backend-win.spec") {
+            pyinstaller --clean anonidata-backend-win.spec
+          } elseif (Test-Path "anonidata-backend.spec") {
+            pyinstaller --clean anonidata-backend.spec
+          } else {
+            pyinstaller --onefile --console --name anonidata-backend --add-data "config;config" main.py
+          }
+
+          if (-not (Test-Path "dist\anonidata-backend.exe")) {
+            Write-Error "Backend no compilado"
+            exit 1
+          }
+          Write-Host "✓ Backend Windows (x64 para ARM64 emulación) compilado"
+
+      - name: Copiar backend y compilar Electron para ARM64
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "backend\dist\anonidata-backend.exe" "dist\anonidata-backend.exe" -Force
+          npm ci
+          npm run build:renderer
+          npm run build:main
+          npx electron-builder --win --arm64
+
+      - name: Renombrar artefacto
+        shell: pwsh
+        run: |
+          $exeFiles = Get-ChildItem "release\*.exe" -ErrorAction SilentlyContinue
+          if ($exeFiles) {
+            $target = "release\AnoniData-arm64.exe"
+            Copy-Item $exeFiles[0].FullName $target -Force
+            Write-Host "✓ Renombrado a AnoniData-arm64.exe"
+          }
+
+      - name: Subir artefacto Windows ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-build
+          path: release/AnoniData-arm64.exe
+          if-no-files-found: error
+          retention-days: 5
+
+  # =========================================
+  # JOB 3: BUILD macOS
   # =========================================
   build-mac:
     runs-on: macos-14
@@ -166,10 +241,10 @@ jobs:
           retention-days: 5
 
   # =========================================
-  # JOB 3: CREAR RELEASE (opcional)
+  # JOB 4: CREAR RELEASE
   # =========================================
   create-release:
-    needs: [build-windows, build-mac]
+    needs: [build-windows-x64, build-windows-arm64, build-mac]
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.create_release == 'true' || github.event.inputs.create_release == '' }}
     permissions:
@@ -191,10 +266,16 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "Versión: $VERSION | Tag: $TAG"
 
-      - name: Descargar artefacto Windows
+      - name: Descargar artefacto Windows x64
         uses: actions/download-artifact@v4
         with:
-          name: windows-build
+          name: windows-x64-build
+          path: release/
+
+      - name: Descargar artefacto Windows ARM64
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-arm64-build
           path: release/
 
       - name: Descargar artefacto macOS
@@ -220,14 +301,22 @@ jobs:
 
             | Plataforma | Archivo | Tipo |
             |------------|---------|------|
-            | 🪟 Windows | `AnoniData.exe` | Portable (no requiere instalación) |
+            | 🪟 Windows x64 | `AnoniData-x64.exe` | Portable (no requiere instalación) |
+            | 🪟 Windows ARM64 | `AnoniData-arm64.exe` | Portable para Surface Pro X, Lenovo X13s, etc. |
             | 🍎 macOS | `AnoniData.dmg` | Universal (Intel + Apple Silicon) |
+
+            ### 💡 ¿Cuál descargar?
+            - **Windows con procesador Intel/AMD** → `AnoniData-x64.exe`
+            - **Windows con procesador ARM** (Surface Pro X, Snapdragon) → `AnoniData-arm64.exe`
+            - **macOS** (cualquier Mac) → `AnoniData.dmg`
 
             ### 📝 Notas
             - Build automático desde rama `main`
             - Fecha: ${{ github.event.head_commit.timestamp || 'Manual dispatch' }}
+            - La versión ARM64 de Windows usa el backend x64 bajo emulación WoW64
           files: |
-            release/AnoniData.exe
+            release/AnoniData-x64.exe
+            release/AnoniData-arm64.exe
             release/AnoniData.dmg
           draft: true
           prerelease: false
@@ -246,7 +335,8 @@ jobs:
           echo "  Estado: Draft (revisa y publica manualmente)"
           echo ""
           echo "  Archivos incluidos:"
-          echo "    - AnoniData.exe (Windows portable)"
-          echo "    - AnoniData.dmg (macOS universal)"
+          echo "    - AnoniData-x64.exe   (Windows x64 portable)"
+          echo "    - AnoniData-arm64.exe (Windows ARM64 portable)"
+          echo "    - AnoniData.dmg       (macOS universal)"
           echo ""
           echo "========================================"
