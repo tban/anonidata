@@ -1,0 +1,385 @@
+name: 🚀 Release - Build & Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Plataformas a compilar'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'windows'
+          - 'mac'
+      deploy_drive:
+        description: 'Publicar en Google Drive'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      create_release:
+        description: 'Crear GitHub Release'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      release_tag:
+        description: 'Tag del release (dejar vacío para usar versión de package.json)'
+        required: false
+        type: string
+
+# Evitar releases concurrentes
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # =========================================
+  # JOB 1: BUILD WINDOWS x64
+  # =========================================
+  build-windows-x64:
+    if: ${{ github.event.inputs.platforms == 'all' || github.event.inputs.platforms == 'windows' }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Compilar backend Python
+        shell: pwsh
+        run: |
+          cd backend
+          python -m venv venv
+          .\venv\Scripts\activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m spacy download es_core_news_sm
+
+          if (Test-Path "anonidata-backend-win.spec") {
+            pyinstaller --clean anonidata-backend-win.spec
+          } elseif (Test-Path "anonidata-backend.spec") {
+            pyinstaller --clean anonidata-backend.spec
+          } else {
+            pyinstaller --onefile --console --name anonidata-backend --add-data "config;config" main.py
+          }
+
+          if (-not (Test-Path "dist\anonidata-backend.exe")) {
+            Write-Error "Backend no compilado"
+            exit 1
+          }
+          $sizeMB = [math]::Round((Get-Item "dist\anonidata-backend.exe").Length / 1MB, 2)
+          Write-Host "✓ Backend Windows x64 compilado ($sizeMB MB)"
+
+      - name: Copiar backend y compilar Electron
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "backend\dist\anonidata-backend.exe" "dist\anonidata-backend.exe" -Force
+          npm install
+          npm run build:renderer
+          npm run build:main
+          npx electron-builder --win --x64 --publish never
+
+      - name: Renombrar artefacto
+        shell: pwsh
+        run: |
+          # Buscar portable .exe (excluir Setup e instaladores)
+          $exeFiles = Get-ChildItem "release\*.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch 'Setup|blockmap' }
+          if ($exeFiles) {
+            $target = "release\AnoniData.exe"
+            Copy-Item $exeFiles[0].FullName $target -Force
+            $sizeMB = [math]::Round((Get-Item $target).Length / 1MB, 2)
+            Write-Host "✓ Portable: AnoniData.exe ($sizeMB MB)"
+          } else {
+            Write-Error "No se encontró el portable .exe"
+            exit 1
+          }
+
+      - name: Subir artefacto Windows x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnoniData-Windows-x64
+          path: release/AnoniData.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  # =========================================
+  # JOB 2: BUILD macOS
+  # =========================================
+  build-mac:
+    if: ${{ github.event.inputs.platforms == 'all' || github.event.inputs.platforms == 'mac' }}
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Compilar backend Python
+        run: |
+          cd backend
+          python3 -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m spacy download es_core_news_sm
+          pyinstaller --clean anonidata-backend.spec
+
+          if [ ! -f "dist/anonidata-backend" ]; then
+            echo "✗ Backend no compilado"
+            exit 1
+          fi
+          SIZE=$(du -h "dist/anonidata-backend" | cut -f1)
+          echo "✓ Backend macOS compilado ($SIZE)"
+
+      - name: Copiar backend y compilar Electron
+        run: |
+          mkdir -p dist
+          cp backend/dist/anonidata-backend dist/anonidata-backend
+          chmod +x dist/anonidata-backend
+          npm install
+          npm run build:renderer
+          npm run build:main
+          npx electron-builder --mac --publish never
+
+      - name: Renombrar artefacto
+        run: |
+          DMG_FILE=$(find release -name "*.dmg" -not -name "*.blockmap" -type f | head -1)
+          if [ -n "$DMG_FILE" ]; then
+            cp "$DMG_FILE" "release/AnoniData.dmg"
+            SIZE=$(du -h "release/AnoniData.dmg" | cut -f1)
+            echo "✓ DMG: AnoniData.dmg ($SIZE)"
+          else
+            echo "✗ No se encontró el DMG"
+            exit 1
+          fi
+
+      - name: Subir artefacto macOS
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnoniData-macOS
+          path: release/AnoniData.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  # =========================================
+  # JOB 3: DEPLOY A GOOGLE DRIVE
+  # =========================================
+  deploy-drive:
+    needs: [build-windows-x64, build-mac]
+    # Ejecutar si al menos un build tuvo éxito y el deploy está habilitado
+    if: |
+      always() &&
+      github.event.inputs.deploy_drive == 'true' &&
+      (needs.build-windows-x64.result == 'success' || needs.build-windows-x64.result == 'skipped') &&
+      (needs.build-mac.result == 'success' || needs.build-mac.result == 'skipped') &&
+      (needs.build-windows-x64.result == 'success' || needs.build-mac.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout código (solo scripts y package.json)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts
+            package.json
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install google-auth google-api-python-client
+
+      # Descargar artefactos disponibles
+      - name: Descargar artefacto Windows
+        if: ${{ needs.build-windows-x64.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: AnoniData-Windows-x64
+          path: artifacts/
+
+      - name: Descargar artefacto macOS
+        if: ${{ needs.build-mac.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: AnoniData-macOS
+          path: artifacts/
+
+      - name: Verificar artefactos
+        run: |
+          echo "📦 Artefactos disponibles para deploy:"
+          ls -lh artifacts/ 2>/dev/null || echo "  (ninguno)"
+
+      - name: Extraer metadatos
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PRODUCT=$(node -p "require('./package.json').productName || require('./package.json').name")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "product=$PRODUCT" >> $GITHUB_OUTPUT
+          echo "📋 Version: $VERSION | Product: $PRODUCT"
+
+      - name: 🚀 Publicar en Google Drive
+        env:
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          DRIVE_FILE_IDS: |
+            {
+              "exe": "${{ secrets.DRIVE_FILE_ID_EXE }}",
+              "dmg": "${{ secrets.DRIVE_FILE_ID_DMG }}",
+              "version_json": "${{ secrets.DRIVE_FILE_ID_VERSION }}"
+            }
+          APP_VERSION: ${{ steps.meta.outputs.version }}
+          PRODUCT_NAME: ${{ steps.meta.outputs.product }}
+        run: |
+          ARGS=""
+          if [ -f "artifacts/AnoniData.exe" ]; then
+            ARGS="$ARGS --exe artifacts/AnoniData.exe"
+          fi
+          if [ -f "artifacts/AnoniData.dmg" ]; then
+            ARGS="$ARGS --dmg artifacts/AnoniData.dmg"
+          fi
+          ARGS="$ARGS --version-file /tmp/version.json"
+
+          python .github/scripts/deploy-to-drive.py $ARGS
+
+      - name: 📋 Resumen del deploy
+        if: always()
+        run: |
+          echo ""
+          echo "========================================"
+          echo "🚀 DEPLOY A GOOGLE DRIVE"
+          echo "========================================"
+          echo "  Versión: ${{ steps.meta.outputs.version }}"
+          echo "  Producto: ${{ steps.meta.outputs.product }}"
+          echo ""
+          echo "  Plataformas:"
+          if [ "${{ needs.build-windows-x64.result }}" == "success" ]; then
+            echo "    ✅ Windows x64 (portable) → Google Drive"
+          fi
+          if [ "${{ needs.build-mac.result }}" == "success" ]; then
+            echo "    ✅ macOS (DMG) → Google Drive"
+          fi
+          echo ""
+          echo "  version.json actualizado en Google Drive"
+          echo "========================================"
+
+  # =========================================
+  # JOB 4: CREAR GITHUB RELEASE (opcional)
+  # =========================================
+  create-release:
+    needs: [build-windows-x64, build-mac]
+    if: |
+      always() &&
+      github.event.inputs.create_release == 'true' &&
+      (needs.build-windows-x64.result == 'success' || needs.build-windows-x64.result == 'skipped') &&
+      (needs.build-mac.result == 'success' || needs.build-mac.result == 'skipped') &&
+      (needs.build-windows-x64.result == 'success' || needs.build-mac.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Obtener versión
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="v${VERSION}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Descargar artefacto Windows x64
+        if: ${{ needs.build-windows-x64.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: AnoniData-Windows-x64
+          path: release/
+
+      - name: Descargar artefacto macOS
+        if: ${{ needs.build-mac.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: AnoniData-macOS
+          path: release/
+
+      - name: Listar artefactos
+        run: ls -lh release/
+
+      - name: Crear Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "AnoniData ${{ steps.version.outputs.tag }}"
+          body: |
+            ## AnoniData ${{ steps.version.outputs.tag }}
+
+            ### 📥 Descargas
+
+            | Plataforma | Archivo | Tipo |
+            |------------|---------|------|
+            | 🪟 Windows x64 | `AnoniData.exe` | Portable (no requiere instalación) |
+            | 🍎 macOS | `AnoniData.dmg` | DMG |
+
+            ### 📝 Notas
+            - Build automático desde rama `main`
+          files: |
+            release/AnoniData.exe
+            release/AnoniData.dmg
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resumen
+        run: |
+          echo "========================================"
+          echo "🚀 GITHUB RELEASE CREADO (DRAFT)"
+          echo "  Tag: ${{ steps.version.outputs.tag }}"
+          echo "  Revisa y publica manualmente"
+          echo "========================================"
