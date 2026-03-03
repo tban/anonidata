@@ -258,9 +258,15 @@ jobs:
           echo "product=$PRODUCT" >> $GITHUB_OUTPUT
           echo "📋 Version: $VERSION | Product: $PRODUCT"
 
+      - name: 🔐 Configurar credenciales de Google
+        run: |
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}' > /tmp/sa-key.json
+          # Validate the JSON
+          python3 -c "import json; d=json.load(open('/tmp/sa-key.json')); print('✓ Key ID:', d.get('private_key_id','?')[:12] + '...')"
+
       - name: 🚀 Publicar en Google Drive
         env:
-          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/sa-key.json
           DRIVE_FILE_IDS: |
             {
               "exe": "${{ secrets.DRIVE_FILE_ID_EXE }}",
@@ -280,6 +286,10 @@ jobs:
           ARGS="$ARGS --version-file /tmp/version.json"
 
           python .github/scripts/deploy-to-drive.py $ARGS
+
+      - name: 🧹 Limpiar credenciales
+        if: always()
+        run: rm -f /tmp/sa-key.json
 
       - name: 📋 Resumen del deploy
         if: always()
