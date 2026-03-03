@@ -50,12 +50,25 @@ def get_drive_service():
     """Create authenticated Google Drive service."""
     import base64
 
+    # Method 1: Use GOOGLE_APPLICATION_CREDENTIALS file (preferred)
+    creds_file = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+    if creds_file and os.path.exists(creds_file):
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                creds_file, scopes=SCOPES
+            )
+            service = build('drive', 'v3', credentials=credentials)
+            print(f"  ✓ Authenticated via file: {creds_file}")
+            return service
+        except Exception as e:
+            print(f"  ⚠ File auth failed: {e}")
+
+    # Method 2: Use GOOGLE_SERVICE_ACCOUNT_KEY env var (JSON or base64)
     key_data = os.environ.get('GOOGLE_SERVICE_ACCOUNT_KEY')
     if not key_data:
-        print("ERROR: GOOGLE_SERVICE_ACCOUNT_KEY environment variable not set")
+        print("ERROR: No credentials found. Set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_KEY")
         sys.exit(1)
 
-    # Support both raw JSON and base64-encoded JSON
     key_data = key_data.strip()
     if not key_data.startswith('{'):
         try:
