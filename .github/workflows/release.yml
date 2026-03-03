@@ -101,7 +101,7 @@ jobs:
           npm install
           npm run build:renderer
           npm run build:main
-          npx electron-builder --win --x64
+          npx electron-builder --win --x64 --publish never
 
       - name: Renombrar artefacto
         shell: pwsh
@@ -176,7 +176,7 @@ jobs:
           npm install
           npm run build:renderer
           npm run build:main
-          npx electron-builder --mac
+          npx electron-builder --mac --publish never
 
       - name: Renombrar artefacto
         run: |
