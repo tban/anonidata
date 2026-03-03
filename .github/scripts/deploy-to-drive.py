@@ -48,13 +48,25 @@ RETRY_DELAY = 5  # seconds
 
 def get_drive_service():
     """Create authenticated Google Drive service."""
-    key_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_KEY')
-    if not key_json:
+    import base64
+
+    key_data = os.environ.get('GOOGLE_SERVICE_ACCOUNT_KEY')
+    if not key_data:
         print("ERROR: GOOGLE_SERVICE_ACCOUNT_KEY environment variable not set")
         sys.exit(1)
 
+    # Support both raw JSON and base64-encoded JSON
+    key_data = key_data.strip()
+    if not key_data.startswith('{'):
+        try:
+            key_data = base64.b64decode(key_data).decode('utf-8')
+            print("  (Key decoded from base64)")
+        except Exception as e:
+            print(f"ERROR: Failed to decode base64 key: {e}")
+            sys.exit(1)
+
     try:
-        key_info = json.loads(key_json)
+        key_info = json.loads(key_data)
     except json.JSONDecodeError as e:
         print(f"ERROR: Invalid JSON in GOOGLE_SERVICE_ACCOUNT_KEY: {e}")
         sys.exit(1)
