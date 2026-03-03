@@ -28,9 +28,9 @@ datas_list = [
 if spacy_model_path and spacy_model_path.exists():
     model_name = spacy_model_path.name
     datas_list.append((str(spacy_model_path), f'spacy/data/{model_name}'))
-    print(f"✓ Incluyendo modelo spaCy: {model_name} desde {spacy_model_path}")
+    print(f"[OK] Incluyendo modelo spaCy: {model_name} desde {spacy_model_path}")
 else:
-    print("⚠ Modelo spaCy no encontrado - NER no estará disponible")
+    print("[!] Modelo spaCy no encontrado - NER no estara disponible")
 
 a = Analysis(
     ['main.py'],
