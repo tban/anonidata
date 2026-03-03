@@ -39,7 +39,7 @@ except ImportError:
     from googleapiclient.http import MediaFileUpload
 
 
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # Maximum retries for API calls
 MAX_RETRIES = 3
