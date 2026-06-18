@@ -101,73 +101,59 @@ jobs:
             exit 1
           }
 
-      - name: Copiar backend al directorio dist del proyecto
+      - name: Copiar backend al directorio binaries de Tauri
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item "backend\dist\anonidata-backend.exe" "dist\anonidata-backend.exe" -Force
-          Write-Host "✓ Backend copiado a dist\anonidata-backend.exe"
+          New-Item -ItemType Directory -Force -Path src-tauri\binaries | Out-Null
+          Copy-Item "backend\dist\anonidata-backend.exe" "src-tauri\binaries\anonidata-backend-aarch64-pc-windows-msvc.exe" -Force
+          Write-Host "✓ Backend copiado a src-tauri\binaries\anonidata-backend-aarch64-pc-windows-msvc.exe"
+          Get-Item "src-tauri\binaries\anonidata-backend-aarch64-pc-windows-msvc.exe" | Select-Object Name, Length
 
       # =========================================
-      # 3. FRONTEND ELECTRON (Vite + TypeScript)
+      # 3. COMPILACIÓN TAURI (Vite + Rust/Tauri ARM64)
       # =========================================
+      - name: Configurar Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-pc-windows-msvc
+
       - name: Instalar dependencias Node.js
         run: npm ci
 
-      - name: Compilar renderer (Vite)
-        run: npm run build:renderer
-
-      - name: Compilar main process (TypeScript)
-        run: npm run build:main
-
-      # =========================================
-      # 4. EMPAQUETAR CON ELECTRON-BUILDER (ARM64)
-      # =========================================
-      - name: Empaquetar aplicación Windows ARM64 (portable)
-        shell: pwsh
-        run: |
-          Write-Host "========================================="
-          Write-Host "Empaquetando con electron-builder (portable ARM64)"
-          Write-Host "========================================="
-
-          Write-Host "`nContenido de dist/:"
-          Get-ChildItem dist\ | Select-Object Name, Length
-
-          # electron-builder con target ARM64
-          npx electron-builder --win --arm64
-
-          Write-Host "`n✓ Empaquetado completado"
+      - name: Compilar aplicación con Tauri (ARM64)
+        run: npm run build -- --target aarch64-pc-windows-msvc
 
       - name: Verificar artefactos generados
         shell: pwsh
         run: |
           Write-Host "========================================="
-          Write-Host "Artefactos en release/:"
+          Write-Host "Artefactos en target/release/bundle/:"
           Write-Host "========================================="
 
-          if (Test-Path "release") {
-            Get-ChildItem -Recurse release\* -Include *.exe,*.zip,*.msi | ForEach-Object {
+          if (Test-Path "src-tauri/target") {
+            Get-ChildItem -Recurse src-tauri/target\* -Include *.exe,*.msi | ForEach-Object {
               $sizeMB = [math]::Round($_.Length / 1MB, 2)
               Write-Host "  → $($_.Name) ($sizeMB MB)"
             }
           } else {
-            Write-Error "Directorio release/ no encontrado"
+            Write-Error "Directorio target de Tauri no encontrado"
             exit 1
           }
 
       # =========================================
-      # 5. SUBIR ARTEFACTOS
+      # 4. SUBIR ARTEFACTOS
       # =========================================
-      - name: Subir ejecutable portable ARM64
+      - name: Subir instalador Windows Setup ARM64
         uses: actions/upload-artifact@v4
         with:
-          name: AnoniData-Windows-ARM64-Portable
-          path: release/*.exe
+          name: AnoniData-Windows-ARM64-Setup
+          path: src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 30
 
       # =========================================
-      # 6. RESUMEN
+      # 5. RESUMEN
       # =========================================
       - name: Resumen del build
         shell: pwsh

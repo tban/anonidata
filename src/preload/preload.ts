@@ -7,8 +7,8 @@ export interface AnoniDataAPI {
     showInfo: (message: string, title?: string) => Promise<boolean>;
   };
   process: {
-    anonymize: (files: string[]) => Promise<ProcessResult>;
-    detectOnly: (filePath: string, options?: { skipDetection?: boolean }) => Promise<DetectOnlyResult>;
+    anonymize: (files: string[], options?: { fileOptions?: Record<string, { enable_ocr?: boolean }> }) => Promise<ProcessResult>;
+    detectOnly: (filePath: string, options?: { skipDetection?: boolean; enable_ocr?: boolean }) => Promise<DetectOnlyResult>;
     finalizeAnonymization: (
       originalFile: string,
       detectionsPath: string,
@@ -121,8 +121,8 @@ const api: AnoniDataAPI = {
     showInfo: (message: string, title?: string) => ipcRenderer.invoke('dialog:showInfo', message, title),
   },
   process: {
-    anonymize: (files: string[]) => ipcRenderer.invoke('process:anonymize', files),
-    detectOnly: (filePath: string, options?: { skipDetection?: boolean }) => ipcRenderer.invoke('process:detectOnly', filePath, options),
+    anonymize: (files: string[], options?: { fileOptions?: Record<string, { enable_ocr?: boolean }> }) => ipcRenderer.invoke('process:anonymize', files, options),
+    detectOnly: (filePath: string, options?: { skipDetection?: boolean; enable_ocr?: boolean }) => ipcRenderer.invoke('process:detectOnly', filePath, options),
     finalizeAnonymization: (originalFile: string, detectionsPath: string, approvedIndices: number[], options?: { isImagePdf?: boolean }) =>
       ipcRenderer.invoke('process:finalizeAnonymization', originalFile, detectionsPath, approvedIndices, options),
   },

@@ -106,6 +106,12 @@ export class AppUpdater {
         // macOS: Check manual via GitHub API (sin certificado)
         const currentVersion = app.getVersion();
         const updateInfo = await this.checkGitHubReleases(currentVersion);
+        if (updateInfo.available && this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.send('updater:update-available', {
+            version: updateInfo.version,
+            releaseNotes: updateInfo.releaseNotes,
+          });
+        }
         return updateInfo;
       } else {
         log.info('Plataforma no soportada para actualizaciones');

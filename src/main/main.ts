@@ -49,6 +49,45 @@ function createApplicationMenu() {
             }
           }
         },
+        {
+          label: 'Buscar actualizaciones',
+          click: async () => {
+            if (isDev) {
+              const { dialog } = require('electron');
+              await dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Buscar actualizaciones',
+                message: 'Estás en modo de desarrollo. Las actualizaciones automáticas están deshabilitadas.',
+                buttons: ['Aceptar'],
+              });
+              return;
+            }
+
+            if (appUpdater) {
+              try {
+                const info = await appUpdater.checkForUpdates();
+                if (!info.available) {
+                  const { dialog } = require('electron');
+                  await dialog.showMessageBox(mainWindow, {
+                    type: 'info',
+                    title: 'Buscar actualizaciones',
+                    message: `La aplicación está actualizada.\n\nYa tienes la versión más reciente (v${app.getVersion()}).`,
+                    buttons: ['Aceptar'],
+                  });
+                }
+              } catch (error: any) {
+                log.error('Error al comprobar actualizaciones manualmente:', error);
+                const { dialog } = require('electron');
+                await dialog.showMessageBox(mainWindow, {
+                  type: 'error',
+                  title: 'Error',
+                  message: `Ocurrió un error al buscar actualizaciones: ${error.message}`,
+                  buttons: ['Aceptar'],
+                });
+              }
+            }
+          }
+        },
         { type: 'separator' },
         {
           label: 'Salir',
@@ -290,7 +329,7 @@ app.on('ready', () => {
     return true;
   });
 
-  ipcMain.handle('process:anonymize', async (_event: any, files: string[]) => {
+  ipcMain.handle('process:anonymize', async (_event: any, files: string[], options?: any) => {
     log.info(`Procesando ${files.length} archivos`);
 
     return new Promise(async (resolve, reject) => {
@@ -308,6 +347,7 @@ app.on('ready', () => {
         action: 'anonymize',
         files: files,
         settings: store.get('settings'),
+        options: options || {},
       };
 
       if (pythonProcess.stdin) {
@@ -347,7 +387,7 @@ app.on('ready', () => {
     });
   });
 
-  ipcMain.handle('process:detectOnly', async (_event: any, filePath: string) => {
+  ipcMain.handle('process:detectOnly', async (_event: any, filePath: string, options?: any) => {
     log.info(`Detectando PII en: ${filePath}`);
 
     return new Promise(async (resolve, reject) => {
@@ -365,6 +405,7 @@ app.on('ready', () => {
         action: 'detect_only',
         file: filePath,
         settings: store.get('settings'),
+        options: options || {},
       };
 
       if (pythonProcess.stdin) {
@@ -676,13 +717,13 @@ app.on('ready', () => {
   // Inicializar sistema de actualizaciones
   appUpdater = new AppUpdater(mainWindow, isDev);
 
-  // Verificar actualizaciones 5 segundos después del inicio (solo en producción)
+  // Verificar actualizaciones 3 segundos después del inicio (solo en producción)
   if (!isDev) {
     setTimeout(() => {
       if (appUpdater) {
         appUpdater.checkForUpdates();
       }
-    }, 5000);
+    }, 3000);
   }
 });
 

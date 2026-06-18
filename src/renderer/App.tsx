@@ -3,23 +3,25 @@ import { ProcessResult } from '../preload/preload';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { UpdateNotification } from './components/UpdateNotification';
 import logoImage from './assets/logo.png';
+import { anonidata, listen } from './lib/tauri-bridge';
 
 
 interface FileItem {
   path: string;
   name: string;
   size: number;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: 'pending' | 'processing' | 'completed' | 'error' | 'ocr_processing';
   progress: number;
   result?: any;
-  pdfType?: 'text' | 'image' | 'detecting';
+  pdfType?: 'text' | 'image' | 'text_ocr' | 'detecting';
+  ocrOption?: 'yes' | 'no';
 }
 
 interface ReviewState {
   originalFilePath: string;
   preAnonymizedPath: string;
   detectionsPath: string;
-  pdfType: 'text' | 'image' | 'detecting';
+  pdfType: 'text' | 'image' | 'text_ocr' | 'detecting';
 }
 
 function App() {
@@ -32,6 +34,7 @@ function App() {
   const [reviewState, setReviewState] = useState<ReviewState | null>(null);
   const [isDetecting, setIsDetecting] = useState<number | null>(null);
   const [processingStep, setProcessingStep] = useState<string>('');
+  const [ocrPromptFiles, setOcrPromptFiles] = useState<string[]>([]);
   const [completionData, setCompletionData] = useState<{
     type: 'success' | 'partial' | 'error' | 'critical';
     successCount: number;
@@ -45,23 +48,24 @@ function App() {
 
   // Listener para el menú de la aplicación
   useEffect(() => {
-    const handleShowAbout = () => setShowAboutModal(true);
+    const unlisten = listen('show-about-modal', () => {
+      setShowAboutModal(true);
+    });
 
-    // @ts-ignore - window.electron existe en Electron
-    if (window.electron && window.electron.ipcRenderer) {
-      window.electron.ipcRenderer.on('show-about-modal', handleShowAbout);
-
-      return () => {
-        window.electron.ipcRenderer.removeListener('show-about-modal', handleShowAbout);
-      };
-    }
+    return () => {
+      unlisten.then(fn => fn());
+    };
   }, []);
 
   // Función para detectar si un PDF es de texto o imagen usando el backend para consistencia
   const detectPdfType = useCallback(async (filePath: string): Promise<'text' | 'image'> => {
     try {
       // Usar directamente el backend (PyMuPDF) que tiene el mismo criterio que el proceso de anonimización
-      return await window.anonidata.utils.checkPdfType(filePath);
+      const result = await anonidata.utils.checkPdfType(filePath);
+      if (result === 'image' || result === 'text') {
+        return result as 'image' | 'text';
+      }
+      return 'text';
     } catch (error) {
       console.error('Error detectando tipo PDF con backend:', error);
       // Fallback seguro a text para permitir intento de procesado
@@ -70,7 +74,7 @@ function App() {
   }, []);
 
   const handleSelectFiles = useCallback(async () => {
-    const filePaths = await window.anonidata.dialog.openFile();
+    const filePaths = await anonidata.dialog.openFile();
     if (filePaths.length > 0) {
       const newFiles: FileItem[] = filePaths.map((filePath) => {
         const fileName = filePath.split('/').pop() || filePath;
@@ -86,20 +90,102 @@ function App() {
       setFiles((prev) => [...prev, ...newFiles]);
 
       // Detectar tipo de PDF para cada archivo en paralelo
-      newFiles.forEach(async (file, idx) => {
+      newFiles.forEach(async (file) => {
         const pdfType = await detectPdfType(file.path);
-        setFiles((prev) => {
-          const updated = [...prev];
-          const fileIndex = prev.length - newFiles.length + idx;
-          if (updated[fileIndex]) {
-            updated[fileIndex] = { ...updated[fileIndex], pdfType };
-          }
-          return updated;
-        });
+        setFiles((prev) =>
+          prev.map((f) => (f.path === file.path ? { ...f, pdfType } : f))
+        );
+
+        if (pdfType === 'image') {
+          setOcrPromptFiles((prev) => [...prev, file.path]);
+        }
       });
     }
   }, [detectPdfType]);
 
+  // Procesar archivos a partir de sus rutas absolutas (Tauri 2 native drag-drop)
+  const handleDroppedPaths = useCallback(async (filePaths: string[]) => {
+    try {
+      const { stat } = await import('@tauri-apps/plugin-fs');
+
+      const newFilesPromises = filePaths.map(async (filePath) => {
+        const fileName = filePath.split(/[/\\]/).pop() || filePath;
+        let size = 0;
+        try {
+          const metadata = await stat(filePath);
+          size = metadata.size;
+        } catch (e) {
+          console.error('Error getting metadata for dropped file:', e);
+        }
+
+        return {
+          path: filePath,
+          name: fileName,
+          size,
+          status: 'pending' as const,
+          progress: 0,
+          pdfType: 'detecting' as const,
+        };
+      });
+
+      const newFiles = await Promise.all(newFilesPromises);
+      setFiles((prev) => [...prev, ...newFiles]);
+
+      // Detectar tipo de PDF para cada archivo en paralelo
+      newFiles.forEach(async (file) => {
+        const pdfType = await detectPdfType(file.path);
+        setFiles((prev) =>
+          prev.map((f) => (f.path === file.path ? { ...f, pdfType } : f))
+        );
+
+        if (pdfType === 'image') {
+          setOcrPromptFiles((prev) => [...prev, file.path]);
+        }
+      });
+    } catch (err) {
+      console.error('Error processing dropped paths:', err);
+    }
+  }, [detectPdfType]);
+
+  // Listener para arrastrar y soltar archivos desde el OS usando la API nativa de Tauri 2
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined;
+
+    const setupDragDrop = async () => {
+      try {
+        const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+        const webview = getCurrentWebview();
+
+        const unlisten = await webview.onDragDropEvent((event) => {
+          if (event.payload.type === 'drop') {
+            setIsDragActive(false);
+            const paths = event.payload.paths;
+            const pdfPaths = paths.filter((p) => p.toLowerCase().endsWith('.pdf'));
+
+            if (pdfPaths.length > 0) {
+              handleDroppedPaths(pdfPaths);
+            }
+          } else if (event.payload.type === 'enter') {
+            setIsDragActive(true);
+          } else if (event.payload.type === 'leave' || event.payload.type === 'cancel') {
+            setIsDragActive(false);
+          }
+        });
+
+        unlistenFn = unlisten;
+      } catch (err) {
+        console.error('Error setting up drag-drop listener:', err);
+      }
+    };
+
+    setupDragDrop();
+
+    return () => {
+      if (unlistenFn) {
+        unlistenFn();
+      }
+    };
+  }, [handleDroppedPaths]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -118,29 +204,27 @@ function App() {
     e.stopPropagation();
     setIsDragActive(false);
 
+    // Evitar que el drag-and-drop del navegador interfiera con el evento nativo de Tauri 2
+    const isTauri = typeof window !== 'undefined' && (
+      (window as any).__tauri_ipc__ !== undefined ||
+      (window as any).__TAURI_INTERNALS__ !== undefined ||
+      (window as any).__TAURI__ !== undefined
+    );
+    if (isTauri) {
+      return;
+    }
+
     const droppedFiles = Array.from(e.dataTransfer.files);
     const pdfFiles = droppedFiles.filter(
       (file) => file.type === 'application/pdf' || file.name.endsWith('.pdf')
     );
 
-    // En Electron con sandbox: false, los File objects tienen la propiedad 'path'
+    // En Tauri, los File objects del drag-drop del navegador no tienen 'path'.
+    // Usamos el nombre del archivo como fallback. Para rutas completas,
+    // se recomienda usar el evento tauri://drag-drop.
     const newFiles: FileItem[] = pdfFiles.map((file: any) => {
-      // Intentar primero acceder directamente a la propiedad path
-      let filePath = file.path;
-
-      // Si no existe, intentar con electronWebUtils
-      if (!filePath && window.electronWebUtils) {
-        try {
-          filePath = window.electronWebUtils.getPathForFile(file);
-        } catch (error) {
-          console.error('Error obteniendo ruta del archivo:', error);
-        }
-      }
-
-      // Si aún no tenemos ruta, usar el nombre como fallback
-      if (!filePath) {
-        filePath = file.name;
-      }
+      // En Tauri webview, file.path puede estar disponible en algunos casos
+      const filePath = file.path || file.name;
 
       return {
         path: filePath,
@@ -156,16 +240,15 @@ function App() {
       setFiles((prev) => [...prev, ...newFiles]);
 
       // Detectar tipo de PDF para cada archivo en paralelo
-      newFiles.forEach(async (file, idx) => {
+      newFiles.forEach(async (file) => {
         const pdfType = await detectPdfType(file.path);
-        setFiles((prev) => {
-          const updated = [...prev];
-          const fileIndex = prev.length - newFiles.length + idx;
-          if (updated[fileIndex]) {
-            updated[fileIndex] = { ...updated[fileIndex], pdfType };
-          }
-          return updated;
-        });
+        setFiles((prev) =>
+          prev.map((f) => (f.path === file.path ? { ...f, pdfType } : f))
+        );
+
+        if (pdfType === 'image') {
+          setOcrPromptFiles((prev) => [...prev, file.path]);
+        }
       });
     }
   }, [detectPdfType]);
@@ -173,9 +256,9 @@ function App() {
   const handleProcess = async () => {
     if (files.length === 0) return;
 
-    // Separar archivos de texto de los de imagen
-    const textFiles = files.filter((f) => f.pdfType === 'text');
-    const imageFiles = files.filter((f) => f.pdfType === 'image');
+    // Separar archivos de texto (o imagen con OCR) de los de imagen sin OCR
+    const textFiles = files.filter((f) => f.pdfType === 'text' || f.pdfType === 'text_ocr' || (f.pdfType === 'image' && f.ocrOption === 'yes'));
+    const imageFiles = files.filter((f) => f.pdfType === 'image' && f.ocrOption !== 'yes');
     const detectingFiles = files.filter((f) => f.pdfType === 'detecting');
 
     // Si hay archivos aún detectando, esperar
@@ -195,7 +278,7 @@ function App() {
       return;
     }
 
-    // Si no hay archivos de texto para procesar
+    // Si no hay archivos procesables
     if (textFiles.length === 0) {
       setCompletionData({
         type: 'partial',
@@ -206,8 +289,8 @@ function App() {
         warnings: [{
           file: `${imageFiles.length} PDF(s) de imagen detectado(s)`,
           warnings: [
-            'Los PDFs de imagen no se pueden procesar automáticamente.',
-            'Utiliza el botón "Revisión manual" para cada archivo de imagen.'
+            'Los PDFs de imagen no se pueden procesar automáticamente si no activas el OCR.',
+            'Utiliza el botón "Revisión manual" para cada archivo de imagen o actívales el OCR.'
           ]
         }]
       });
@@ -221,13 +304,13 @@ function App() {
     const startTime = Date.now();
 
     try {
-      // Solo procesar archivos de texto
+      // Solo procesar archivos de texto (o de imagen con OCR habilitado)
       const filePaths = textFiles.map((f) => f.path);
 
-      // Actualizar estados: procesando para texto, skipped para imagen
+      // Actualizar estados: procesando para texto/OCR, skipped para imagen sin OCR
       setFiles((prev) =>
         prev.map((f) => {
-          if (f.pdfType === 'image') {
+          if (f.pdfType === 'image' && f.ocrOption !== 'yes') {
             return { ...f, status: 'completed' as const, progress: 100 };
           }
           return { ...f, status: 'processing' as const, progress: 0 };
@@ -250,7 +333,15 @@ function App() {
         }
       }, 1500);
 
-      const result = await window.anonidata.process.anonymize(filePaths);
+      // Construir las opciones específicas de OCR por archivo
+      const fileOptions: Record<string, { enable_ocr?: boolean }> = {};
+      files.forEach((f) => {
+        if (f.ocrOption !== undefined) {
+          fileOptions[f.path] = { enable_ocr: f.ocrOption === 'yes' };
+        }
+      });
+
+      const result = await anonidata.process.anonymize(filePaths, { fileOptions });
 
       clearInterval(stepInterval);
       setProcessingStep('');
@@ -258,14 +349,14 @@ function App() {
       const endTime = Date.now();
       const processingTimeSeconds = ((endTime - startTime) / 1000).toFixed(2);
 
-      // Actualizar resultados para archivos de texto
+      // Actualizar resultados para archivos procesados
       setFiles((prev) =>
         prev.map((f) => {
-          // Mantener estado de imagen como completado (saltado)
-          if (f.pdfType === 'image') {
+          // Mantener estado de imagen como completado (saltado) si no se le activó OCR
+          if (f.pdfType === 'image' && f.ocrOption !== 'yes') {
             return f;
           }
-          // Buscar resultado correspondiente para archivos de texto
+          // Buscar resultado correspondiente para archivos de texto/OCR procesados
           const resultIdx = textFiles.findIndex((tf) => tf.path === f.path);
           if (resultIdx >= 0 && result.results[resultIdx]) {
             const fileResult = result.results[resultIdx];
@@ -378,30 +469,124 @@ function App() {
     setProcessResult(null);
   };
 
+  const handleOcrDecision = async (filePath: string, decision: 'yes' | 'no') => {
+    // Cerrar el modal para el archivo actual
+    setOcrPromptFiles((prev) => prev.filter((p) => p !== filePath));
+
+    if (decision === 'yes') {
+      // Poner el archivo en estado de procesamiento OCR
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.path === filePath ? { ...f, status: 'ocr_processing' } : f
+        )
+      );
+
+      try {
+        // Ejecutar OCR en español en el backend
+        const result = await anonidata.utils.applyOcr(filePath, 'spa');
+
+        if (result.success && result.ocrPdfPath) {
+          // Obtener el nuevo tamaño
+          const { stat } = await import('@tauri-apps/plugin-fs');
+          let size = 0;
+          try {
+            const metadata = await stat(result.ocrPdfPath);
+            size = metadata.size;
+          } catch (e) {
+            console.error('Error getting metadata for OCR PDF:', e);
+          }
+
+          const ocrFileName = result.ocrPdfPath.split(/[/\\]/).pop() || result.ocrPdfPath;
+
+          // Reemplazar la entrada original por el nuevo PDF de texto convertido
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.path === filePath
+                ? {
+                    ...f,
+                    path: result.ocrPdfPath,
+                    name: ocrFileName,
+                    size: size || f.size,
+                    status: 'pending',
+                    pdfType: 'text_ocr',
+                    ocrOption: 'yes'
+                  }
+                : f
+            )
+          );
+        } else {
+          console.error('OCR application failed:', result.error);
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.path === filePath ? { ...f, status: 'error', ocrOption: 'no' } : f
+            )
+          );
+          await anonidata.dialog.showInfo(
+            `Error al aplicar OCR: ${result.error || 'Error desconocido'}`,
+            'Error'
+          );
+        }
+      } catch (error) {
+        console.error('Error applying OCR:', error);
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.path === filePath ? { ...f, status: 'error', ocrOption: 'no' } : f
+          )
+        );
+        await anonidata.dialog.showInfo(
+          `Error al aplicar OCR: ${error}`,
+          'Error'
+        );
+      }
+    } else {
+      setFiles((prev) =>
+        prev.map((f) => (f.path === filePath ? { ...f, ocrOption: 'no' } : f))
+      );
+    }
+  };
+
   const handleStartReview = async (fileIndex: number) => {
     const file = files[fileIndex];
     setIsDetecting(fileIndex);
 
     try {
-      const result = await window.anonidata.process.detectOnly(file.path);
+      const options = {
+        enable_ocr: file.ocrOption !== 'no'
+      };
+      const result = await anonidata.process.detectOnly(file.path, options);
 
-      if (result.success && result.preAnonymizedPath && result.detectionsPath) {
+      // Parsear defensivamente si result viene como string
+      let parsedResult = result;
+      if (typeof result === 'string') {
+        try {
+          parsedResult = JSON.parse(result);
+        } catch (e) {
+          console.error('Failed to parse detectOnly result:', e);
+        }
+      }
+
+      const success = parsedResult?.success;
+      const preAnonymizedPath = parsedResult?.preAnonymizedPath || parsedResult?.pre_anonymized_path;
+      const detectionsPath = parsedResult?.detectionsPath || parsedResult?.detections_path;
+
+      if (success && preAnonymizedPath && detectionsPath) {
         setReviewState({
           originalFilePath: file.path,
-          preAnonymizedPath: result.preAnonymizedPath,
-          detectionsPath: result.detectionsPath,
+          preAnonymizedPath: preAnonymizedPath,
+          detectionsPath: detectionsPath,
           pdfType: file.pdfType || 'text',
         });
       } else {
-        console.error('Error iniciando revisión:', result.error);
-        await window.anonidata.dialog.showInfo(
-          `Error al iniciar la revisión: ${result.error}`,
+        const errorMsg = parsedResult?.error || 'Respuesta inválida del backend';
+        console.error('Error iniciando revisión:', errorMsg);
+        await anonidata.dialog.showInfo(
+          `Error al iniciar la revisión: ${errorMsg}`,
           'Error'
         );
       }
     } catch (error) {
       console.error('Error iniciando revisión:', error);
-      await window.anonidata.dialog.showInfo(
+      await anonidata.dialog.showInfo(
         `Error al iniciar la revisión: ${error}`,
         'Error'
       );
@@ -414,7 +599,7 @@ function App() {
     if (!reviewState) return;
 
     try {
-      const result = await window.anonidata.process.finalizeAnonymization(
+      const result = await anonidata.process.finalizeAnonymization(
         reviewState.originalFilePath,
         reviewState.detectionsPath,
         approvedIndices,
@@ -481,8 +666,8 @@ function App() {
     if (reviewState) {
       // Eliminar archivos temporales generados para la revisión
       try {
-        const deleteDetections = window.anonidata.utils.deleteFile(reviewState.detectionsPath);
-        const deletePreAnonymized = window.anonidata.utils.deleteFile(reviewState.preAnonymizedPath);
+        const deleteDetections = anonidata.utils.deleteFile(reviewState.detectionsPath);
+        const deletePreAnonymized = anonidata.utils.deleteFile(reviewState.preAnonymizedPath);
 
         const [detectionsDeleted, preAnonymizedDeleted] = await Promise.all([
           deleteDetections,
@@ -548,7 +733,7 @@ function App() {
             <p className="text-gray-600">
               Anonimización de PDFs conforme a RGPD by{' '}
               <button
-                onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
+                onClick={() => anonidata.utils.openExternal('https://x.com/TbanR')}
                 className="text-teal-600 hover:text-teal-700 hover:underline transition-colors cursor-pointer"
               >
                 @TbanR
@@ -671,7 +856,7 @@ function App() {
                         {file.pdfType === 'detecting' && (
                           <span className="inline-flex items-center gap-1 text-gray-400">
                             <div className="w-3 h-3 border-2 border-gray-300 border-t-teal-500 rounded-full animate-spin"></div>
-                            <span>Detectando...</span>
+                            <span>Detectando... puede tardar un poco</span>
                           </span>
                         )}
                         {file.pdfType === 'text' && (
@@ -679,9 +864,21 @@ function App() {
                             📄 Texto
                           </span>
                         )}
+                        {file.pdfType === 'text_ocr' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+                            📝 Texto OCR
+                          </span>
+                        )}
                         {file.pdfType === 'image' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
-                            🖼️ Imagen
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                            file.ocrOption === 'yes'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : file.ocrOption === 'no'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            🖼️ Imagen {file.ocrOption === 'yes' && '(OCR)'}
+                            {file.ocrOption === 'no' && '(Sin OCR)'}
                           </span>
                         )}
                       </p>
@@ -690,6 +887,11 @@ function App() {
                       {file.status === 'pending' && (
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                           Pendiente
+                        </span>
+                      )}
+                      {file.status === 'ocr_processing' && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 animate-pulse">
+                          Aplicando OCR...
                         </span>
                       )}
                       {file.status === 'processing' && (
@@ -709,6 +911,20 @@ function App() {
                       )}
                     </div>
                   </div>
+
+                  {file.status === 'ocr_processing' && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-gray-600">
+                        <span className="flex items-center gap-2">
+                          <div className="spinner-modern" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></div>
+                          <span className="font-medium">Convirtiendo PDF a texto editable (OCR)...</span>
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                        <div className="bg-amber-500 h-1.5 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+                      </div>
+                    </div>
+                  )}
 
                   {file.status === 'processing' && (
                     <div className="mt-3 space-y-2">
@@ -832,7 +1048,7 @@ function App() {
           <p className="mt-2 text-xs">
             v{__APP_VERSION__} · by{' '}
             <button
-              onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
+              onClick={() => anonidata.utils.openExternal('https://x.com/TbanR')}
               className="text-teal-600 hover:text-teal-700 hover:underline transition-colors cursor-pointer"
             >
               @TbanR
@@ -1007,7 +1223,7 @@ function App() {
                   <div className="text-center">
                     <p className="text-sm text-gray-500 mb-3">Contacto</p>
                     <button
-                      onClick={() => window.anonidata.utils.openExternal('https://x.com/TbanR')}
+                      onClick={() => anonidata.utils.openExternal('https://x.com/TbanR')}
                       className="inline-flex items-center gap-2 text-teal-600 hover:text-teal-700 font-medium transition-colors cursor-pointer"
                     >
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -1054,6 +1270,50 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmación de OCR */}
+      {ocrPromptFiles.length > 0 && ocrPromptFiles[0] && (() => {
+        const currentOcrPromptFile = ocrPromptFiles[0];
+        const currentOcrPromptFileName = currentOcrPromptFile.split('/').pop() || currentOcrPromptFile;
+        return (
+          <div className="modal-backdrop backdrop-blur-strong p-4">
+            <div className="modal-content glass rounded-2xl shadow-2xl max-w-md w-full border-2 border-white/20 p-6">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">Reconocimiento de Texto (OCR)</h3>
+                <p className="text-sm text-gray-600">
+                  El archivo <strong className="text-gray-800 break-all">"{currentOcrPromptFileName}"</strong> ha sido identificado como una imagen o escaneo (no contiene texto seleccionable).
+                </p>
+              </div>
+              
+              <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-4 mb-6">
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Para poder buscar y ocultar datos personales (PII) automáticamente en este documento, es necesario aplicar OCR. Si decides no aplicarlo, solo se detectarán firmas u otros elementos visuales si los hay, y deberás revisarlo manualmente de forma detallada.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => handleOcrDecision(currentOcrPromptFile, 'yes')}
+                  className="w-full py-3 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-semibold rounded-xl shadow-md transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>🔍</span> Sí, aplicar OCR y procesar
+                </button>
+                <button
+                  onClick={() => handleOcrDecision(currentOcrPromptFile, 'no')}
+                  className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>❌</span> No, omitir OCR
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Componente de actualización automática */}
       <UpdateNotification />

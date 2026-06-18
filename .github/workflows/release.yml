@@ -93,28 +93,31 @@ jobs:
           $sizeMB = [math]::Round((Get-Item "dist\anonidata-backend.exe").Length / 1MB, 2)
           Write-Host "✓ Backend Windows x64 compilado ($sizeMB MB)"
 
-      - name: Copiar backend y compilar Electron
+      - name: Configurar Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Copiar backend y compilar Tauri
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item "backend\dist\anonidata-backend.exe" "dist\anonidata-backend.exe" -Force
+          New-Item -ItemType Directory -Force -Path src-tauri\binaries | Out-Null
+          Copy-Item "backend\dist\anonidata-backend.exe" "src-tauri\binaries\anonidata-backend-x86_64-pc-windows-msvc.exe" -Force
           npm install
-          npm run build:renderer
-          npm run build:main
-          npx electron-builder --win --x64 --publish never
+          npm run build
 
       - name: Renombrar artefacto
         shell: pwsh
         run: |
-          # Buscar portable .exe (excluir Setup e instaladores)
-          $exeFiles = Get-ChildItem "release\*.exe" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch 'Setup|blockmap' }
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $exeFiles = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe"
           if ($exeFiles) {
             $target = "release\AnoniData.exe"
             Copy-Item $exeFiles[0].FullName $target -Force
             $sizeMB = [math]::Round((Get-Item $target).Length / 1MB, 2)
-            Write-Host "✓ Portable: AnoniData.exe ($sizeMB MB)"
+            Write-Host "✓ Instalador: AnoniData.exe ($sizeMB MB)"
           } else {
-            Write-Error "No se encontró el portable .exe"
+            Write-Error "No se encontró el .exe en src-tauri\target\release\bundle\nsis\"
             exit 1
           }
 
@@ -168,25 +171,29 @@ jobs:
           SIZE=$(du -h "dist/anonidata-backend" | cut -f1)
           echo "✓ Backend macOS compilado ($SIZE)"
 
-      - name: Copiar backend y compilar Electron
+      - name: Configurar Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Copiar backend y compilar Tauri
         run: |
-          mkdir -p dist
-          cp backend/dist/anonidata-backend dist/anonidata-backend
-          chmod +x dist/anonidata-backend
+          mkdir -p src-tauri/binaries
+          cp backend/dist/anonidata-backend src-tauri/binaries/anonidata-backend-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/anonidata-backend-aarch64-apple-darwin
           npm install
-          npm run build:renderer
-          npm run build:main
-          npx electron-builder --mac --publish never
+          npm run build
 
       - name: Renombrar artefacto
         run: |
-          DMG_FILE=$(find release -name "*.dmg" -not -name "*.blockmap" -type f | head -1)
+          mkdir -p release
+          DMG_FILE=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" -type f | head -1)
           if [ -n "$DMG_FILE" ]; then
             cp "$DMG_FILE" "release/AnoniData.dmg"
             SIZE=$(du -h "release/AnoniData.dmg" | cut -f1)
             echo "✓ DMG: AnoniData.dmg ($SIZE)"
           else
-            echo "✗ No se encontró el DMG"
+            echo "✗ No se encontró el DMG en src-tauri/target/release/bundle/dmg"
             exit 1
           fi
 

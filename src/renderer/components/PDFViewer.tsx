@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
+import { anonidata } from '../lib/tauri-bridge'
 
 // Configurar worker de PDF.js
 // El worker está copiado en la carpeta public y Vite lo incluye en el build
@@ -46,9 +47,9 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
         console.log('Loading PDF from:', pdfPath)
 
-        // Leer el archivo usando el handler IPC de Electron
+        // Leer el archivo usando el bridge de Tauri
         // Esto es más seguro que fetch() con file:// URLs
-        const arrayBuffer = await window.anonidata.utils.readPdfFile(pdfPath)
+        const arrayBuffer = await anonidata.utils.readPdfFile(pdfPath)
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
         const doc = await loadingTask.promise
 

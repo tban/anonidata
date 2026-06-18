@@ -67,23 +67,14 @@ def setup_logging():
         filter=SanitizingFilter(),
     )
 
-    # File handler (solo en desarrollo, no en ejecutable empaquetado)
-    if not is_frozen:
-        try:
-            logs_dir = Path(__file__).parent.parent.parent / "logs"
-            logs_dir.mkdir(exist_ok=True)
-
-            logger.add(
-                logs_dir / "anonidata_{time:YYYY-MM-DD}.log",
-                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-                level="INFO",
-                rotation="10 MB",
-                retention="30 days",
-                compression="zip",
-                filter=SanitizingFilter(),
-            )
-        except Exception as e:
-            # Si falla crear el archivo de log, continuar sin él
-            logger.warning(f"No se pudo crear archivo de log: {e}")
+    try:
+        logger.add(
+            "/tmp/anonidata_backend.log",
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+            level="DEBUG",
+            filter=SanitizingFilter(),
+        )
+    except Exception as e:
+        sys.stderr.write(f"No se pudo crear archivo de log temporal: {e}\n")
 
     logger.info("Sistema de logging configurado")

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AnoniData",
+  "version": "1.0.0",
+  "identifier": "com.anonidata.app",
+  "build": {
+    "beforeDevCommand": "npm run dev:renderer",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "npm run build:renderer",
+    "frontendDist": "../dist/renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AnoniData",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/anonidata-backend"
+    ],
+    "macOS": {
+      "signingIdentity": "Developer ID Application: Esteban Rodriguez Rivero (A37M3C7HGY)",
+      "minimumSystemVersion": "10.15",
+      "entitlements": "../build/entitlements.mac.plist",
+      "hardenedRuntime": true
+    }
+  },
+  "plugins": {}
+}

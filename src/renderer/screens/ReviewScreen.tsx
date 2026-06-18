@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { anonidata } from '../lib/tauri-bridge'
 import { PDFViewer } from '../components/PDFViewer'
 import { DetectionOverlay } from '../components/DetectionOverlay'
 import { SelectionOverlay } from '../components/SelectionOverlay'
@@ -68,7 +69,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
           }
         }, 800)
 
-        const result = await window.anonidata.review.loadDetections(detectionsPath)
+        const result = await anonidata.review.loadDetections(detectionsPath)
 
         clearInterval(stepInterval)
 
@@ -162,7 +163,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
 
     // Guardar detecciones actualizadas en el archivo JSON
     try {
-      await window.anonidata.review.saveDetections(detectionsPath, updatedDetections)
+      await anonidata.review.saveDetections(detectionsPath, updatedDetections)
       console.log('Nueva detección manual guardada:', newDetection)
     } catch (error) {
       console.error('Error guardando detección manual:', error)

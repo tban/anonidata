@@ -75,3 +75,6 @@ test_recurso*.pdf
 
 # Pero PERMITIR test_pii_detection.py (es parte del sistema de tests)
 !test_pii_detection.py
+
+# Tauri
+src-tauri/target/

@@ -47,17 +47,22 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
     if action == "anonymize":
         files = request.get("files", [])
         settings_dict = request.get("settings", {})
-
-        # Crear configuración
-        settings = Settings(**settings_dict)
-
-        # Crear procesador
-        processor = PDFProcessor(settings)
+        options = request.get("options", {})
+        file_options = options.get("fileOptions", {}) if isinstance(options, dict) else {}
 
         # Procesar archivos
         results = []
         for file_path in files:
             try:
+                # Obtener opciones específicas para este archivo e incorporarlas a su configuración
+                this_file_opts = file_options.get(file_path, {})
+                file_settings_dict = settings_dict.copy()
+                if isinstance(this_file_opts, dict):
+                    file_settings_dict.update(this_file_opts)
+                
+                settings = Settings(**file_settings_dict)
+                processor = PDFProcessor(settings)
+                
                 result = processor.process_file(file_path)
                 results.append(result)
             except Exception as e:
@@ -80,9 +85,15 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
         """
         file_path = request.get("file")
         settings_dict = request.get("settings", {})
+        options = request.get("options", {})
+
+        # Combinar settings con opciones específicas de esta llamada
+        file_settings_dict = settings_dict.copy()
+        if isinstance(options, dict):
+            file_settings_dict.update(options)
 
         # Crear configuración
-        settings = Settings(**settings_dict)
+        settings = Settings(**file_settings_dict)
 
         try:
             # Importar componentes necesarios
@@ -241,8 +252,9 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     
                     doc.close()
                     
-                    # Criterio: > 50 caracteres reales = texto
-                    pdf_type = "text" if total_text_len > 50 else "image"
+                    # Criterio: > 300 caracteres reales = texto
+                    pdf_type = "text" if total_text_len > 300 else "image"
+                    logger.info(f"Check PDF type: {file_path} -> total_text_len={total_text_len}, classified as={pdf_type}")
                     
                     results.append({
                         "file": file_path,
@@ -275,6 +287,79 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
                 "error": str(e)
             }
 
+    elif action == "apply_ocr":
+        """
+        Convierte un PDF de imágenes en un PDF con capa de texto buscable usando OCR
+        """
+        file_path = request.get("file")
+        language = request.get("language", "spa")
+        
+        try:
+            import fitz
+            import io
+            from PIL import Image
+            import pytesseract
+            import shutil
+            
+            # Verificar Tesseract cmd (macOS homebrew paths)
+            tesseract_path = shutil.which("tesseract")
+            if not tesseract_path and sys.platform == "darwin":
+                for path in ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"]:
+                    if os.path.exists(path):
+                        tesseract_path = path
+                        break
+            if tesseract_path:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
+            logger.info(f"Iniciando conversión OCR de {file_path} a español")
+            
+            new_doc = fitz.open()
+            doc = fitz.open(file_path)
+            
+            for page_num in range(doc.page_count):
+                page = doc[page_num]
+                pix = page.get_pixmap(dpi=150)
+                img_data = pix.tobytes("png")
+                img = Image.open(io.BytesIO(img_data))
+                
+                # Intentar con el idioma solicitado (español por defecto), si falla caer a inglés
+                try:
+                    pdf_page_bytes = pytesseract.image_to_pdf_or_hocr(
+                        img, extension='pdf', lang=language, config="--oem 3 --psm 6"
+                    )
+                except Exception as lang_error:
+                    logger.warning(f"Error con idioma OCR '{language}': {lang_error}. Reintentando con 'eng'.")
+                    pdf_page_bytes = pytesseract.image_to_pdf_or_hocr(
+                        img, extension='pdf', lang="eng", config="--oem 3 --psm 6"
+                    )
+                
+                page_doc = fitz.open("pdf", pdf_page_bytes)
+                new_doc.insert_pdf(page_doc)
+                page_doc.close()
+                
+            doc.close()
+            
+            # Guardar el PDF con la extensión _OCR.pdf
+            file_path_obj = Path(file_path)
+            new_file_path = file_path_obj.parent / f"{file_path_obj.stem}_OCR.pdf"
+            
+            new_doc.save(str(new_file_path), garbage=4, deflate=True)
+            new_doc.close()
+            
+            logger.info(f"Conversión OCR exitosa: {new_file_path.name}")
+            
+            return {
+                "success": True,
+                "ocrPdfPath": str(new_file_path),
+            }
+            
+        except Exception as e:
+            logger.error(f"Error en apply_ocr: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
     else:
         return {
             "success": False,
@@ -300,9 +385,12 @@ def main():
                 # Parsear solicitud
                 request = json.loads(line.strip())
                 logger.debug(f"Solicitud recibida: {request.get('action')}")
+                request_id = request.get("request_id")
 
                 # Procesar
                 response = process_request(request)
+                if request_id is not None and isinstance(response, dict):
+                    response["request_id"] = request_id
 
                 # Enviar respuesta
                 sys.stdout.write(json.dumps(response) + "\n")
@@ -323,6 +411,13 @@ def main():
                     "success": False,
                     "error": str(e),
                 }
+                try:
+                    if 'request' in locals() and isinstance(request, dict):
+                        req_id = request.get("request_id")
+                        if req_id is not None:
+                            error_response["request_id"] = req_id
+                except Exception:
+                    pass
                 sys.stdout.write(json.dumps(error_response) + "\n")
                 sys.stdout.flush()
 

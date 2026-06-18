@@ -59,10 +59,29 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        # Testing / dev tools
         'pytest', 'mypy', 'black', 'flake8', 'mypy_extensions',
         'unittest', 'test', 'tests', '_pytest',
         'coverage', 'pytest_cov',
-        'torch', 'transformers', 'scipy', 'torchvision',
+        # Deep learning (no se usa)
+        'torch', 'torchvision', 'torchaudio', 'transformers',
+        'tensorflow', 'keras', 'caffe2',
+        'easyocr',
+        'safetensors', 'tokenizers', 'huggingface_hub',
+        # Ciencia / análisis (no se usa)
+        'scipy', 'scikit-image', 'skimage',
+        'pandas', 'matplotlib', 'IPython', 'jupyter',
+        # PDF redundantes (no se usan, ya tenemos PyMuPDF)
+        'pdfminer', 'pdfplumber', 'pdf2image', 'reportlab',
+        'pypdfium2',
+        # NLP redundante (no se usa)
+        'presidio_analyzer', 'presidio_anonymizer',
+        'phonenumbers',
+        # Imágenes redundantes
+        'imageio', 'tifffile', 'shapely', 'scikit_image',
+        # Otros no necesarios
+        'cryptography', 'sympy', 'networkx', 'mpmath',
+        'pygments', 'Pygments',
     ],
     noarchive=False,
     optimize=0,  # 0 para compatibilidad con NumPy en Python 3.13

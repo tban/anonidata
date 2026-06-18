@@ -3,11 +3,14 @@ Motor OCR usando Tesseract y EasyOCR
 Detecta texto en imágenes embebidas o páginas escaneadas
 """
 
+import os
 import io
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from loguru import logger
+import shutil
+import sys
 
 import numpy as np
 from PIL import Image
@@ -53,10 +56,21 @@ class OCREngine:
 
         # Verificar Tesseract
         if pytesseract:
+            # En macOS (app empaquetada), el PATH puede no incluir homebrew
+            tesseract_path = shutil.which("tesseract")
+            if not tesseract_path and sys.platform == "darwin":
+                for path in ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"]:
+                    if os.path.exists(path):
+                        tesseract_path = path
+                        break
+            
+            if tesseract_path:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
             try:
                 pytesseract.get_tesseract_version()
                 self.tesseract_available = True
-                logger.debug("Tesseract disponible")
+                logger.debug(f"Tesseract disponible en {tesseract_path or 'PATH'}")
             except Exception as e:
                 logger.warning(f"Tesseract no disponible: {e}")
                 self.tesseract_available = False
@@ -73,6 +87,15 @@ class OCREngine:
         Returns:
             OCRData con resultados
         """
+        # Si OCR está deshabilitado en la configuración, no procesar
+        if not getattr(self.settings, "enable_ocr", True):
+            logger.info("OCR está deshabilitado para este documento")
+            return OCRData(results=[], pages_processed=[])
+
+        if not self.tesseract_available:
+            logger.warning("Tesseract no está disponible. Omitiendo conversión de páginas e imágenes para OCR.")
+            return OCRData(results=[], pages_processed=[])
+
         results = []
         pages_processed = []
 

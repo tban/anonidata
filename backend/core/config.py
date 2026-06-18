@@ -18,6 +18,7 @@ class Settings(BaseModel):
     ocr_language: str = "spa"  # Español
     ocr_dpi: int = 300
     use_gpu: bool = False
+    enable_ocr: bool = True
 
     # Detección PII
     detect_dni: bool = True
