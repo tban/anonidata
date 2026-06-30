@@ -71,8 +71,28 @@ function runWorkflow() {
 
         // 3. COMPILACIÓN / EMPAQUETADO
         console.log('\n3. Iniciando el proceso de empaquetado del ecosistema (Vite + Rust/Tauri + Backend)...');
-        console.log('   [Ejecutando npm run build:backend...]');
-        execSync('npm run build:backend', { stdio: 'inherit' });
+        
+        if (process.platform === 'win32') {
+            console.log('   [Ejecutando PyInstaller para Windows...]');
+            // Ejecutar pyinstaller directamente
+            execSync('pyinstaller --clean anonidata-backend.spec', { stdio: 'inherit' });
+            
+            // Copiar al directorio binaries con el nombre esperado por Tauri
+            const fs = require('fs');
+            const path = require('path');
+            const sourceExe = path.join(__dirname, 'dist', 'anonidata-backend.exe');
+            const binariesDir = path.join(__dirname, 'src-tauri', 'binaries');
+            if (!fs.existsSync(binariesDir)) {
+                fs.mkdirSync(binariesDir, { recursive: true });
+            }
+            const targetExe = path.join(binariesDir, 'anonidata-backend-x86_64-pc-windows-msvc.exe');
+            console.log(`   [Copiando backend a ${targetExe}...]`);
+            fs.copyFileSync(sourceExe, targetExe);
+        } else {
+            console.log('   [Ejecutando npm run build:backend...]');
+            execSync('npm run build:backend', { stdio: 'inherit' });
+        }
+
         console.log('   [Ejecutando npm run build...]');
         const buildCmd = process.platform === 'darwin' ? 'npm run build -- --target universal-apple-darwin' : 'npm run build';
         execSync(buildCmd, { stdio: 'inherit' });
