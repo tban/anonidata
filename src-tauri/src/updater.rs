@@ -11,19 +11,15 @@ const BUILD_NUMBER_STR: &str = env!("CARGO_BUILD_NUMBER");
 
 #[derive(Deserialize, Debug)]
 struct PlatformInfo {
-    _label: String,
     filename: String,
-    _arch: String,
     url: String,
 }
 
 #[derive(Deserialize, Debug)]
 struct VersionJson {
-    _product_name: serde_json::Value, // loose type to handle camelCase/snake_case
     version: String,
     #[serde(default)]
     build: u64,
-    _date: String,
     platforms: HashMap<String, PlatformInfo>,
 }
 
