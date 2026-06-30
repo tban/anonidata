@@ -43,21 +43,38 @@ class PDFProcessor:
         logger.info(f"Procesando: {input_path.name}")
 
         try:
+            from utils.progress import emit_progress
+            emit_progress(file_path, 2, "Iniciando análisis...")
+
             # Validar archivo
             self.file_manager.validate_pdf(input_path)
+            emit_progress(file_path, 5, "Estructura de páginas leída...")
 
             # 1. Parsear PDF
             logger.debug("Parseando PDF...")
             pdf_data = self.pdf_parser.parse(input_path)
+            emit_progress(file_path, 8, "Analizando PDF...")
 
             # 2. Aplicar OCR si es necesario
             logger.debug("Aplicando OCR...")
-            ocr_data = self.ocr_engine.process(pdf_data)
+            def ocr_progress(pct, msg):
+                # Mapea OCR del 10% al 50%
+                overall_pct = 10 + int(pct * 0.40)
+                emit_progress(file_path, overall_pct, f"OCR: {msg}")
+            
+            ocr_data = self.ocr_engine.process(pdf_data, progress_callback=ocr_progress)
+            emit_progress(file_path, 50, "Buscando datos personales...")
 
             # 3. Detectar PII
             logger.debug("Detectando datos personales...")
             self.pii_detector.set_pdf_path(input_path)
-            pii_matches = self.pii_detector.detect(pdf_data, ocr_data)
+            def pii_progress(pct, msg):
+                # Mapea PII del 50% al 85%
+                overall_pct = 50 + int(pct * 0.35)
+                emit_progress(file_path, overall_pct, msg)
+
+            pii_matches = self.pii_detector.detect(pdf_data, ocr_data, progress_callback=pii_progress)
+            emit_progress(file_path, 85, "Aplicando redacciones...")
 
             # 4. Anonimizar
             logger.debug("Anonimizando...")
@@ -66,10 +83,12 @@ class PDFProcessor:
                 pdf_data,
                 pii_matches
             )
+            emit_progress(file_path, 92, "Limpiando metadatos...")
 
             # 5. Limpiar metadatos
             logger.debug("Limpiando metadatos...")
             self.file_manager.clean_metadata(output_path)
+            emit_progress(file_path, 96, "Limpiando archivos temporales...")
 
             # 6. Eliminar archivos temporales de una posible revisión manual anterior
             try:

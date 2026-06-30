@@ -78,3 +78,8 @@ test_recurso*.pdf
 
 # Tauri
 src-tauri/target/
+venv-intel/
+release_out/
+poc_test*.pdf
+poc_test*.py
+src-tauri/binaries/

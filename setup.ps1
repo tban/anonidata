@@ -3,29 +3,29 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "🚀 AnoniData Setup Script" -ForegroundColor Cyan
+Write-Host "== AnoniData Setup Script ==" -ForegroundColor Cyan
 Write-Host "=========================" -ForegroundColor Cyan
 Write-Host ""
 
-# Función para imprimir mensajes
+# Funcion para imprimir mensajes
 function Print-Success {
     param($Message)
-    Write-Host "✓ $Message" -ForegroundColor Green
+    Write-Host "[OK] $Message" -ForegroundColor Green
 }
 
 function Print-Error {
     param($Message)
-    Write-Host "✗ $Message" -ForegroundColor Red
+    Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
 function Print-Warning {
     param($Message)
-    Write-Host "⚠ $Message" -ForegroundColor Yellow
+    Write-Host "[WARN] $Message" -ForegroundColor Yellow
 }
 
 function Print-Info {
     param($Message)
-    Write-Host "ℹ $Message" -ForegroundColor Cyan
+    Write-Host "[INFO] $Message" -ForegroundColor Cyan
 }
 
 # Verificar Node.js
@@ -35,13 +35,13 @@ try {
     if ($nodeVersion -match "v(\d+)\.") {
         $majorVersion = [int]$Matches[1]
         if ($majorVersion -lt 18) {
-            Print-Error "Node.js versión 18+ requerida (tienes: $nodeVersion)"
+            Print-Error "Node.js version 18+ requerida (tienes: $nodeVersion)"
             exit 1
         }
     }
     Print-Success "Node.js $nodeVersion"
 } catch {
-    Print-Error "Node.js no está instalado"
+    Print-Error "Node.js no esta instalado"
     Write-Host "Por favor instalar desde: https://nodejs.org/"
     exit 1
 }
@@ -53,7 +53,7 @@ try {
     $pythonVersion = python --version
     Print-Success "Python $pythonVersion"
 } catch {
-    Print-Error "Python no está instalado"
+    Print-Error "Python no esta instalado"
     Write-Host "Por favor instalar desde: https://www.python.org/"
     exit 1
 }
@@ -65,10 +65,10 @@ try {
     $tesseractVersion = tesseract --version 2>&1 | Select-Object -First 1
     Print-Success "Tesseract instalado"
 } catch {
-    Print-Warning "Tesseract OCR no está instalado"
+    Print-Warning "Tesseract OCR no esta instalado"
     Write-Host "Por favor instalar desde: https://github.com/UB-Mannheim/tesseract/wiki"
     Write-Host "Luego agregar al PATH: C:\Program Files\Tesseract-OCR"
-    Print-Info "Puedes continuar con el setup, pero OCR no funcionará sin Tesseract"
+    Print-Info "Puedes continuar con el setup, pero OCR no funcionara sin Tesseract"
 }
 
 # Instalar dependencias Node.js
@@ -106,7 +106,7 @@ Print-Success "Dependencias Python instaladas"
 
 # Descargar modelo spaCy
 Write-Host ""
-Print-Info "Descargando modelo spaCy español (esto puede tardar)..."
+Print-Info "Descargando modelo spaCy espanol (esto puede tardar)..."
 python -m spacy download es_core_news_lg
 Print-Success "Modelo spaCy instalado"
 
@@ -114,19 +114,18 @@ Set-Location ..
 
 # Resumen
 Write-Host ""
-Write-Host "✨ Setup completado exitosamente" -ForegroundColor Green
+Write-Host "Setup completado exitosamente" -ForegroundColor Green
 Write-Host ""
-Write-Host "Próximos pasos:"
+Write-Host "Proximos pasos:"
 Write-Host "  1. Ejecutar en modo desarrollo:"
 Write-Host "     npm run dev"
 Write-Host ""
-Write-Host "  2. Compilar para producción:"
+Write-Host "  2. Compilar para produccion:"
 Write-Host "     npm run build"
-Write-Host "     npm run package:win    # Windows"
 Write-Host ""
 Write-Host "  3. Ejecutar tests:"
 Write-Host "     npm test                # Frontend"
 Write-Host "     npm run test:backend    # Backend"
 Write-Host ""
-Write-Host "📖 Ver docs\QUICKSTART.md para más información"
+Write-Host "Ver docs\QUICKSTART.md para mas informacion"
 Write-Host ""

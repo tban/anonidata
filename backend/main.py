@@ -108,24 +108,41 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
             pii_detector = PIIDetector(settings, pdf_path=Path(file_path))
             anonymizer = Anonymizer(settings)
 
+            from utils.progress import emit_progress
+            emit_progress(file_path, 2, "Iniciando análisis...")
+
             # Parsear PDF
             pdf_data = pdf_parser.parse(Path(file_path))
             logger.info(f"PDF parseado: {pdf_data.page_count} páginas")
+            emit_progress(file_path, 5, "Analizando estructura del documento...")
 
             # Procesar con OCR
-            ocr_data = ocr_engine.process(pdf_data)
+            def ocr_progress(pct, msg):
+                # Mapea OCR del 10% al 60%
+                overall_pct = 10 + int(pct * 0.50)
+                emit_progress(file_path, overall_pct, f"OCR: {msg}")
+
+            ocr_data = ocr_engine.process(pdf_data, progress_callback=ocr_progress)
             logger.info("OCR procesado")
+            emit_progress(file_path, 60, "Buscando datos personales...")
 
             # Detectar PII
-            all_matches = pii_detector.detect(pdf_data, ocr_data)
+            def pii_progress(pct, msg):
+                # Mapea PII del 60% al 95%
+                overall_pct = 60 + int(pct * 0.35)
+                emit_progress(file_path, overall_pct, msg)
+
+            all_matches = pii_detector.detect(pdf_data, ocr_data, progress_callback=pii_progress)
             pdf_parser.close(pdf_data)
             logger.info(f"Detectados {len(all_matches)} elementos de PII")
+            emit_progress(file_path, 95, "Creando documento de revisión...")
 
             # Crear pre-anonimizado
             pre_anon_path, detections_path = anonymizer.create_pre_anonymized(
                 Path(file_path),
                 all_matches
             )
+            emit_progress(file_path, 100, "Análisis completado")
 
             return {
                 "success": True,
@@ -225,6 +242,33 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
             "version": "1.0.0",
         }
 
+    elif action == "fetch_url":
+        url = request.get("url")
+        try:
+            import urllib.request
+            import json
+            import ssl
+
+            # Deshabilitar verificación SSL por problemas locales de certificados
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                content = response.read().decode('utf-8')
+                return {
+                    "success": True,
+                    "data": json.loads(content)
+                }
+        except Exception as e:
+            logger.error(f"Error al descargar URL {url}: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     elif action == "check_pdf_type":
         """
         Verifica rápidamente si los archivos son Texto o Imagen usando PyMuPDF
@@ -232,17 +276,27 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
         """
         files = request.get("files", [])
         results = []
+        from utils.progress import emit_progress
+        import time
 
         try:
             import fitz  # PyMuPDF
             
             for file_path in files:
                 try:
+                    emit_progress(file_path, 10, "Abriendo archivo...")
+                    time.sleep(0.1)
                     doc = fitz.open(file_path)
+                    
+                    emit_progress(file_path, 30, "Analizando texto...")
+                    time.sleep(0.1)
                     total_text_len = 0
                     pages_to_check = min(doc.page_count, 3)
+                    page_count = doc.page_count
                     
                     for i in range(pages_to_check):
+                        emit_progress(file_path, 30 + int((i + 1) * (50 / pages_to_check)), f"Analizando texto (pág. {i+1}/{pages_to_check})...")
+                        time.sleep(0.1)
                         page = doc[i]
                         # get_text("text") es rápido y extrae texto plano
                         text = page.get_text("text").strip()
@@ -250,16 +304,22 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         dense_text = "".join(text.split())
                         total_text_len += len(dense_text)
                     
+                    emit_progress(file_path, 90, "Clasificando formato...")
+                    time.sleep(0.1)
                     doc.close()
                     
                     # Criterio: > 300 caracteres reales = texto
                     pdf_type = "text" if total_text_len > 300 else "image"
                     logger.info(f"Check PDF type: {file_path} -> total_text_len={total_text_len}, classified as={pdf_type}")
                     
+                    emit_progress(file_path, 100, "Detección finalizada")
+                    time.sleep(0.1)
+                    
                     results.append({
                         "file": file_path,
                         "type": pdf_type,
-                        "textLength": total_text_len
+                        "textLength": total_text_len,
+                        "pages": page_count
                     })
                     
                 except Exception as e:
@@ -300,6 +360,9 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
             from PIL import Image
             import pytesseract
             import shutil
+            from utils.progress import emit_progress
+            
+            emit_progress(file_path, 0, "Iniciando OCR...")
             
             # Verificar Tesseract cmd (macOS homebrew paths)
             tesseract_path = shutil.which("tesseract")
@@ -310,14 +373,19 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         break
             if tesseract_path:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_path
-
+ 
             logger.info(f"Iniciando conversión OCR de {file_path} a español")
             
             new_doc = fitz.open()
             doc = fitz.open(file_path)
+            total_pages = doc.page_count
             
-            for page_num in range(doc.page_count):
+            for page_num in range(total_pages):
                 page = doc[page_num]
+                
+                progress_pct = int((page_num / total_pages) * 95)
+                emit_progress(file_path, progress_pct, f"Procesando página {page_num + 1} de {total_pages}...")
+                
                 pix = page.get_pixmap(dpi=150)
                 img_data = pix.tobytes("png")
                 img = Image.open(io.BytesIO(img_data))
@@ -339,6 +407,8 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
                 
             doc.close()
             
+            emit_progress(file_path, 95, "Guardando PDF final...")
+            
             # Guardar el PDF con la extensión _OCR.pdf
             file_path_obj = Path(file_path)
             new_file_path = file_path_obj.parent / f"{file_path_obj.stem}_OCR.pdf"
@@ -347,6 +417,7 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
             new_doc.close()
             
             logger.info(f"Conversión OCR exitosa: {new_file_path.name}")
+            emit_progress(file_path, 100, "Conversión finalizada")
             
             return {
                 "success": True,

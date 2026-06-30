@@ -17,14 +17,17 @@ class RegexPatterns:
     # Formatos: X1234567A, X1234567-A, X1.234.567A, X1.234.567-A
     NIE_PATTERN = r'\b[XYZ](?:\d{7}|\d{1}\.\d{3}\.\d{3})-?[A-Z]\b'
 
+    # CIF español: Letra + 7 dígitos + dígito/letra de control
+    # Formatos: B12345678, B-12345678, B12.345.678
+    CIF_PATTERN = r'\b[A-Z]-?(?:\d{7}|\d{2}\.\d{3}\.\d{2}|\d{8})-?[0-9A-Z]\b'
+
     # Email
-    EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
 
     # Teléfono español (varios formatos)
     PHONE_PATTERNS = [
-        r'\b\+34\s?[6-9][0-9]{8}\b',  # +34 666123456
-        r'\b[6-9][0-9]{2}\s?[0-9]{2}\s?[0-9]{2}\s?[0-9]{2}\b',  # 666 12 34 56
-        r'\b[6-9][0-9]{8}\b',  # 666123456
+        r'\b\+34[\s.-]?[6-9][0-9]{2}[\s.-]?[0-9]{2}[\s.-]?[0-9]{2}[\s.-]?[0-9]{2}\b',  # +34 666 12 34 56
+        r'\b[6-9][0-9]{2}[\s.-]?[0-9]{2,3}[\s.-]?[0-9]{2,3}[\s.-]?[0-9]{2,3}\b',  # 666 123 456, 666-12-34-56
     ]
 
     # IBAN español
@@ -59,8 +62,14 @@ class RegexPatterns:
     def find_phone(self, text: str) -> List[str]:
         """Encuentra teléfonos en el texto"""
         matches = []
+        seen_digits = set()
         for regex in self.phone_regexes:
-            matches.extend(regex.findall(text))
+            for m in regex.finditer(text):
+                # Normalizar: solo dígitos para comparar
+                digits_only = re.sub(r'[^\d]', '', m.group())
+                if digits_only not in seen_digits:
+                    seen_digits.add(digits_only)
+                    matches.append(m.group())
         return matches
 
     def find_iban(self, text: str) -> List[str]:

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { anonidata } from '../lib/tauri-bridge'
 import { PDFViewer } from '../components/PDFViewer'
 import { DetectionOverlay } from '../components/DetectionOverlay'
@@ -27,6 +27,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
   const [scale, setScale] = useState(1.0)
+  const [initialFitApplied, setInitialFitApplied] = useState(false)
   const [pdfPageHeight, setPdfPageHeight] = useState(0)
   const [pdfPageWidth, setPdfPageWidth] = useState(0)
   const [canvasWidth, setCanvasWidth] = useState(0)
@@ -114,7 +115,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
     })
   }
 
-  const handleFitToPage = () => {
+  const handleFitToPage = useCallback(() => {
     if (!viewerContainerRef.current || !canvasWidth || !canvasHeight) return
 
     const container = viewerContainerRef.current
@@ -132,7 +133,14 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
     // Usar la escala menor para que quepa completo
     const newScale = Math.min(scaleX, scaleY, 3) // Máximo 300%
     setScale(Math.max(0.5, newScale)) // Mínimo 50%
-  }
+  }, [canvasWidth, canvasHeight, scale])
+
+  useEffect(() => {
+    if (canvasWidth && canvasHeight && !initialFitApplied && viewerContainerRef.current) {
+      handleFitToPage()
+      setInitialFitApplied(true)
+    }
+  }, [canvasWidth, canvasHeight, initialFitApplied, handleFitToPage])
 
   const handleDocumentLoaded = (doc: PDFDocumentProxy) => {
     setTotalPages(doc.numPages)
@@ -230,13 +238,13 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   console.log('ReviewScreen - Tipos:', currentPageDetections.map(d => `${d.type} (${d.text.substring(0, 20)}...)`))
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-teal-50 to-cyan-50">
+    <div className="flex h-screen bg-stone-950 text-stone-100 selection:bg-teal-500/30">
       {/* Sidebar */}
-      <div className="w-80 glass border-r border-gray-200/50 shadow-2xl flex flex-col">
+      <div className="w-80 glass border-r border-stone-800/80 shadow-2xl flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b">
+        <div className="p-4 border-b border-stone-800">
           <h2 className="text-lg font-semibold mb-2">Revisión de Anonimización</h2>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-stone-400">
             <div className="truncate" title={originalFilePath}>
               {originalFilePath.split('/').pop()}
             </div>
@@ -244,25 +252,25 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
         </div>
 
         {/* Estadísticas */}
-        <div className="p-4 bg-gray-50 border-b">
+        <div className="p-4 bg-stone-900/60 border-b border-stone-800">
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex items-center justify-between p-2 bg-white rounded col-span-2">
-              <span className="text-gray-600">Total Detecciones:</span>
-              <span className="font-semibold">{stats.total}</span>
+            <div className="flex items-center justify-between p-2 bg-stone-950/60 border border-stone-800 rounded col-span-2">
+              <span className="text-stone-400">Total Detecciones:</span>
+              <span className="font-semibold text-stone-200">{stats.total}</span>
             </div>
-            <div className="flex items-center justify-between p-2 rounded" style={{ backgroundColor: '#fff5f3' }}>
-              <span style={{ color: '#FF6B54' }}>Anonimizar:</span>
-              <span className="font-semibold" style={{ color: '#FF6B54' }}>{stats.approved}</span>
+            <div className="flex items-center justify-between p-2 bg-red-950/20 border border-red-900/30 rounded">
+              <span className="text-red-400">Anonimizar:</span>
+              <span className="font-semibold text-red-400">{stats.approved}</span>
             </div>
-            <div className="flex items-center justify-between p-2 bg-orange-50 rounded">
-              <span className="text-orange-700">Mantener:</span>
-              <span className="font-semibold text-orange-700">{stats.rejected}</span>
+            <div className="flex items-center justify-between p-2 bg-amber-950/20 border border-amber-900/30 rounded">
+              <span className="text-amber-400">Mantener:</span>
+              <span className="font-semibold text-amber-400">{stats.rejected}</span>
             </div>
           </div>
         </div>
 
         {/* Acciones rápidas */}
-        <div className="p-4 border-b flex gap-2">
+        <div className="p-4 border-b border-stone-800 flex gap-2">
           <button
             onClick={handleApproveAll}
             className="flex-1 btn-danger text-sm py-2 scale-on-hover"
@@ -271,7 +279,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
           </button>
           <button
             onClick={handleRejectAll}
-            className="flex-1 px-3 py-2 bg-gradient-to-r from-orange-600 to-orange-700 text-white text-sm rounded hover:from-orange-700 hover:to-orange-800 shadow-md hover:shadow-lg scale-on-hover transition-all duration-200"
+            className="flex-1 px-3 py-2 bg-gradient-to-r from-amber-600 to-amber-700 text-white text-sm rounded hover:from-amber-750 hover:to-amber-850 shadow-md hover:shadow-lg scale-on-hover transition-all duration-200 border border-amber-600/20"
           >
             Mantener Todas
           </button>
@@ -284,7 +292,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
           </h3>
           <div className="space-y-2">
             {currentPageDetections.length === 0 ? (
-              <div className="text-sm text-gray-500 text-center py-4">
+              <div className="text-sm text-stone-500 text-center py-4">
                 No hay detecciones en esta página
               </div>
             ) : (
@@ -292,38 +300,37 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
                 const isApproved = approvedIndices.has(detection.index)
                 const isRejected = rejectedIndices.has(detection.index)
                 const isHovered = hoveredDetectionIndex === detection.index
-
+ 
                 return (
                   <div
                     key={detection.index}
-                    className={`p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 scale-on-hover ${isHovered ? 'ring-2 ring-teal-400 shadow-lg' : 'shadow-md'
+                    className={`p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 scale-on-hover ${isHovered ? 'ring-2 ring-teal-500 shadow-lg' : 'shadow-md'
                       } ${isApproved
-                        ? 'border-2'
+                        ? 'bg-red-950/20 border-red-500 shadow-red-500/10'
                         : isRejected
-                          ? 'bg-amber-50 border-amber-300'
-                          : 'bg-white border-gray-300 hover:border-gray-400 hover:shadow-xl'
+                          ? 'bg-amber-950/20 border-amber-850'
+                          : 'bg-stone-900/40 border-stone-800 hover:border-stone-700 hover:shadow-xl'
                       }`}
-                    style={isApproved ? { backgroundColor: '#fff5f3', borderColor: '#FF6B54' } : {}}
                     onClick={() => handleDetectionClick(detection.index)}
                   >
                     <div className="flex items-start justify-between mb-1">
-                      <span className="text-xs font-semibold text-gray-700">
+                      <span className="text-xs font-semibold text-stone-300">
                         {detection.type}
                       </span>
-                      <span className="text-xs text-gray-500">#{detection.index}</span>
+                      <span className="text-xs text-stone-500">#{detection.index}</span>
                     </div>
-                    <div className="text-sm font-mono text-gray-800 truncate">
+                    <div className="text-sm font-mono text-stone-200 truncate">
                       {detection.text}
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-stone-500">
                         Confianza: {(detection.confidence * 100).toFixed(0)}%
                       </span>
                       {isApproved && (
-                        <span className="text-xs font-semibold" style={{ color: '#FF6B54' }}>Anonimizar</span>
+                        <span className="text-xs font-semibold text-red-400">Anonimizar</span>
                       )}
                       {isRejected && (
-                        <span className="text-xs font-semibold text-amber-700">Mantener</span>
+                        <span className="text-xs font-semibold text-amber-400">Mantener</span>
                       )}
                     </div>
                   </div>
@@ -334,7 +341,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
         </div>
 
         {/* Botones de acción */}
-        <div className="p-4 border-t glass-dark backdrop-blur-lg space-y-2">
+        <div className="p-4 border-t border-stone-800 glass-dark backdrop-blur-lg space-y-2">
           <button
             onClick={handleFinish}
             disabled={approvedIndices.size === 0}
@@ -354,25 +361,26 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
       {/* Viewer */}
       <div className="flex-1 flex flex-col">
         {/* Toolbar */}
-        <div className="glass border-b border-gray-200/50 shadow-lg p-4 flex items-center justify-between">
+        <div className="glass border-b border-stone-850 shadow-lg p-2.5 sm:p-4 flex flex-wrap items-center justify-between gap-3">
           {/* Controles de página */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
-              className="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed scale-on-hover shadow-md transition-all"
+              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-stone-800 text-stone-250 border border-stone-700/50 rounded-lg hover:bg-stone-700 disabled:bg-stone-900 disabled:text-stone-600 disabled:border-stone-900 disabled:cursor-not-allowed scale-on-hover shadow-md transition-all text-sm"
             >
-              ← Anterior
+              ← <span className="hidden sm:inline">Anterior</span>
             </button>
-            <span className="text-sm font-semibold text-gray-700 px-3 py-2 bg-white rounded-lg shadow-md">
-              Página {currentPage} de {totalPages}
+            <span className="text-xs sm:text-sm font-semibold text-stone-300 px-2 py-1.5 sm:px-3 sm:py-2 bg-stone-900/80 border border-stone-800 rounded-lg shadow-md min-w-[5.5rem] sm:min-w-0 text-center">
+              <span className="hidden sm:inline">Página {currentPage} de {totalPages}</span>
+              <span className="inline sm:hidden">Pág. {currentPage}/{totalPages}</span>
             </span>
             <button
               onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
-              className="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed scale-on-hover shadow-md transition-all"
+              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-stone-800 text-stone-250 border border-stone-700/50 rounded-lg hover:bg-stone-700 disabled:bg-stone-900 disabled:text-stone-600 disabled:border-stone-900 disabled:cursor-not-allowed scale-on-hover shadow-md transition-all text-sm"
             >
-              Siguiente →
+              <span className="hidden sm:inline">Siguiente</span> →
             </button>
           </div>
 
@@ -380,36 +388,46 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsSelectionMode(!isSelectionMode)}
-              className={`px-4 py-2 rounded-lg shadow-md scale-on-hover transition-all ${isSelectionMode
-                ? 'text-white hover:bg-amber-700 ring-2 ring-amber-300'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-md scale-on-hover transition-all text-sm ${isSelectionMode
+                ? 'text-white hover:bg-amber-600 ring-2 ring-amber-900/60'
+                : 'bg-stone-800 text-stone-250 hover:bg-stone-700 border border-stone-700/50'
                 }`}
-              style={isSelectionMode ? { backgroundColor: '#f59e0b' } : {}}
+              style={isSelectionMode ? { backgroundColor: '#d97706' } : {}}
             >
-              {isSelectionMode ? 'Modo Selección' : '+ Añadir Área'}
+              {isSelectionMode ? (
+                <>
+                  <span className="hidden sm:inline">Modo Selección</span>
+                  <span className="inline sm:hidden">Selección</span>
+                </>
+              ) : (
+                <>
+                  <span className="hidden sm:inline">+ Añadir Área</span>
+                  <span className="inline sm:hidden">+ Área</span>
+                </>
+              )}
             </button>
           </div>
 
           {/* Controles de zoom */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setScale(Math.max(0.5, scale - 0.25))}
-              className="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 scale-on-hover shadow-md"
+              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-stone-800 text-stone-250 border border-stone-700/50 rounded-lg hover:bg-stone-700 scale-on-hover shadow-md text-sm font-semibold"
             >
               -
             </button>
-            <span className="text-sm font-semibold text-gray-700 w-16 text-center px-3 py-2 bg-white rounded-lg shadow-md">
+            <span className="text-xs sm:text-sm font-semibold text-stone-300 w-12 sm:w-16 text-center px-2 py-1.5 sm:px-3 sm:py-2 bg-stone-900/80 border border-stone-800 rounded-lg shadow-md">
               {(scale * 100).toFixed(0)}%
             </span>
             <button
               onClick={() => setScale(Math.min(3, scale + 0.25))}
-              className="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 scale-on-hover shadow-md"
+              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-stone-800 text-stone-250 border border-stone-700/50 rounded-lg hover:bg-stone-700 scale-on-hover shadow-md text-sm font-semibold"
             >
               +
             </button>
             <button
               onClick={handleFitToPage}
-              className="px-3 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-medium scale-on-hover shadow-md"
+              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-500 text-xs sm:text-sm font-medium scale-on-hover shadow-md"
               title="Ajustar página completa al visor"
             >
               Ajustar
@@ -418,17 +436,17 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
         </div>
 
         {/* PDF Viewer */}
-        <div ref={viewerContainerRef} className="flex-1 overflow-auto bg-gradient-to-br from-gray-100 to-gray-200 p-8">
+        <div ref={viewerContainerRef} className="flex-1 overflow-auto bg-stone-950/85 border-t border-stone-900 p-8">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full gap-6">
               <div className="spinner-rings"></div>
               <div className="flex flex-col items-center gap-2">
-                <div className="text-gray-700 text-xl font-semibold text-gradient-shift">
+                <div className="text-stone-300 text-xl font-semibold text-gradient-shift">
                   Preparando revisión
                 </div>
-                <div className="text-gray-600 text-base flex items-center gap-1">
+                <div className="text-stone-400 text-base flex items-center gap-1">
                   {loadingStep}
-                  <span className="dots-pulse text-teal-600">
+                  <span className="dots-pulse text-teal-400">
                     <span></span>
                     <span></span>
                     <span></span>

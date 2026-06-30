@@ -23,7 +23,7 @@ const PACKAGE_JSON_PATH = path.join(PROJECT_ROOT, 'package.json');
 // DESCARGAS DE GOOGLE DRIVE (CONFIGURACIÓN)
 // ==========================================
 const DRIVE_URLS = {
-    dmg: 'https://drive.google.com/open?id=1bxE2vziPKfNEbWwSo0zO6IG_3qz7EwCc&usp=drive_fs',
+    dmg: 'https://drive.google.com/open?id=12rbNznz9t2wol6HabmirJ6X48BuXMNpa&usp=drive_fs',
     exe: 'https://drive.google.com/open?id=1aE8XuzonmI9Bi50Th7vk9FawOHkthf_4&usp=drive_fs',
     version_json: 'https://drive.google.com/open?id=11wml7BF4ZO17coEiimKNJk_tfIMAvWDq&usp=drive_fs'
 };
@@ -79,15 +79,9 @@ function runWorkflow() {
         console.log('   -> Compilación técnica finalizada.');
 
         // 4. LIMPIEZA DE VERSIÓN ANTERIOR
-        console.log('\n4. Limpiando versión anterior de la misma plataforma en el directorio destino...');
-        const targetExtension = process.platform === 'win32' ? '.exe' : '.dmg';
-        const existingFiles = fs.readdirSync(FINAL_DEST_DIR);
-        existingFiles.forEach(file => {
-            if (file.endsWith(targetExtension)) {
-                fs.unlinkSync(path.join(FINAL_DEST_DIR, file));
-                console.log(`   -> Eliminado antiguo de esta plataforma: ${file}`);
-            }
-        });
+        console.log('\n4. Preparando directorio destino (sobrescribiendo en lugar de borrar para mantener el ID de Google Drive)...');
+        // Eliminamos el borrado explícito (fs.unlinkSync) para que Google Drive detecte 
+        // una nueva versión del mismo archivo en lugar de un archivo nuevo con un ID distinto.
 
         // 5. DESPLIEGUE INTERNO
         console.log('\n5. Trasladando los nuevos binarios a la carpeta de despliegue principal...');

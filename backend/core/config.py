@@ -27,6 +27,7 @@ class Settings(BaseModel):
     detect_addresses: bool = True
     detect_phones: bool = True
     detect_emails: bool = True
+    detect_nss: bool = False
     detect_iban: bool = True
     detect_signatures: bool = True
     detect_qr_codes: bool = True

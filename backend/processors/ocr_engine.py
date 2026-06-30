@@ -77,12 +77,13 @@ class OCREngine:
         else:
             self.tesseract_available = False
 
-    def process(self, pdf_data: PDFData) -> OCRData:
+    def process(self, pdf_data: PDFData, progress_callback=None) -> OCRData:
         """
         Procesa el PDF aplicando OCR donde sea necesario
 
         Args:
             pdf_data: Datos del PDF parseado
+            progress_callback: Callback opcional para reportar progreso
 
         Returns:
             OCRData con resultados
@@ -99,6 +100,20 @@ class OCREngine:
         results = []
         pages_processed = []
 
+        # Precalcular páginas con texto (optimización O(1) lookup vs O(n) iteración)
+        pages_with_text = {b.page_num for b in pdf_data.text_blocks}
+
+        # Identificar bloques de imágenes y páginas que necesitarán OCR para calcular pasos
+        image_blocks_to_ocr = [img_block for img_block in pdf_data.image_blocks if img_block.width > 800 or img_block.height > 800]
+        pages_without_text = []
+        for page_num in range(pdf_data.page_count):
+            has_text = page_num in pages_with_text
+            if not has_text:
+                pages_without_text.append(page_num)
+
+        total_steps = len(image_blocks_to_ocr) + len(pages_without_text)
+        current_step = 0
+
         # Procesar imágenes grandes (posibles páginas escaneadas)
         for img_block in pdf_data.image_blocks:
             # Solo procesar imágenes grandes (probablemente páginas escaneadas)
@@ -106,6 +121,9 @@ class OCREngine:
                 logger.debug(
                     f"Aplicando OCR a imagen grande en página {img_block.page_num}"
                 )
+                if progress_callback and total_steps > 0:
+                    pct = int((current_step / total_steps) * 100)
+                    progress_callback(pct, f"Procesando imagen en pág. {img_block.page_num + 1}...")
 
                 ocr_results = self._ocr_image(img_block)
                 results.extend(ocr_results)
@@ -113,14 +131,19 @@ class OCREngine:
                 if img_block.page_num not in pages_processed:
                     pages_processed.append(img_block.page_num)
 
+                current_step += 1
+
         # Detectar páginas sin texto (completamente escaneadas)
         for page_num in range(pdf_data.page_count):
-            has_text = any(b.page_num == page_num for b in pdf_data.text_blocks)
+            has_text = page_num in pages_with_text
 
             if not has_text:
                 # Si la página no tiene texto, procesarla completa independientemente
                 # de si ya se procesó parcialmente una imagen grande
                 logger.debug(f"Página {page_num} sin texto, aplicando OCR a página completa")
+                if progress_callback and total_steps > 0:
+                    pct = int((current_step / total_steps) * 100)
+                    progress_callback(pct, f"Procesando página completa {page_num + 1}...")
 
                 # Renderizar página completa
                 page = pdf_data.document[page_num]
@@ -139,6 +162,11 @@ class OCREngine:
                 # Marcar como procesada solo si no estaba ya
                 if page_num not in pages_processed:
                     pages_processed.append(page_num)
+
+                current_step += 1
+
+        if progress_callback:
+            progress_callback(100, "OCR completado")
 
         logger.debug(f"OCR completado: {len(results)} resultados")
 

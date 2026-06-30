@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import sys
+import platform
 from pathlib import Path
 
 # Encontrar la ubicación del modelo spaCy
@@ -94,7 +95,7 @@ exe = EXE(
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    target_arch='arm64' if _is_mac else None,
+    target_arch=platform.machine() if _is_mac else None,
     codesign_identity=None,
     entitlements_file=None,
 )

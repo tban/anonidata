@@ -1,190 +1,78 @@
 import React, { useEffect, useState } from 'react';
-import { platform } from '@tauri-apps/plugin-os';
-import { anonidata } from '../lib/tauri-bridge';
-import { listen } from '@tauri-apps/api/event';
+import { listen } from '../lib/tauri-bridge';
 
 interface UpdateState {
-  available: boolean;
-  version?: string;
-  downloadUrl?: string;
   downloading: boolean;
-  progress?: number;
-  readyToInstall: boolean;
-  error?: string;
+  progress: number;
+  downloaded: number;
+  total: number;
 }
 
 export const UpdateNotification: React.FC = () => {
   const [updateState, setUpdateState] = useState<UpdateState>({
-    available: false,
     downloading: false,
-    readyToInstall: false,
+    progress: 0,
+    downloaded: 0,
+    total: 0,
   });
 
-  const [closed, setClosed] = useState(false);
-  const [currentPlatform, setCurrentPlatform] = useState<string>('');
-
-  const isWindows = currentPlatform === 'windows';
-  const isMac = currentPlatform === 'macos';
-
   useEffect(() => {
-    // Detectar plataforma
-    const detectPlatform = async () => {
-      try {
-        const os = await platform();
-        setCurrentPlatform(os);
-      } catch (error) {
-        console.error('Error detectando plataforma:', error);
-      }
-    };
-    detectPlatform();
+    // Escuchar el inicio de la descarga
+    const unlistenStart = listen<{total: number}>('updater-start', (event) => {
+      console.log('Update download started', event.payload);
+      setUpdateState({
+        downloading: true,
+        progress: 0,
+        downloaded: 0,
+        total: event.payload.total,
+      });
+    });
 
-    // Verificar actualizaciones al iniciar
-    handleCheckForUpdates(false);
-
-    // Escuchar evento de búsqueda manual del menú
-    let unlisten: any;
-    const setupMenuListener = async () => {
-      try {
-        unlisten = await listen('check-updates', () => {
-          handleCheckForUpdates(true);
-        });
-      } catch (error) {
-        console.error('Error configurando menu listener de actualizaciones:', error);
-      }
-    };
-    setupMenuListener();
+    // Escuchar el progreso
+    const unlistenProgress = listen<{downloaded: number, total: number, percentage: number}>('updater-progress', (event) => {
+      setUpdateState({
+        downloading: true,
+        progress: event.payload.percentage,
+        downloaded: event.payload.downloaded,
+        total: event.payload.total,
+      });
+    });
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      unlistenStart.then(fn => fn());
+      unlistenProgress.then(fn => fn());
     };
   }, []);
 
-  const handleCheckForUpdates = async (manual: boolean) => {
-    try {
-      const currentVersion = await anonidata.app.getVersion();
-      console.log('Versión actual:', currentVersion);
-      
-      const response = await fetch('https://api.github.com/repos/tban/anonidata/releases/latest');
-      if (!response.ok) {
-        throw new Error(`GitHub API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const latestVersion = data.tag_name.replace(/^v/, '');
-
-      // Comparar versiones
-      const isNewer = compareVersions(latestVersion, currentVersion) > 0;
-
-      if (isNewer) {
-        // Buscar asset según plataforma
-        let downloadUrl = data.html_url;
-        if (isWindows) {
-          const exeAsset = data.assets.find((asset: any) => asset.name.endsWith('.exe'));
-          if (exeAsset) downloadUrl = exeAsset.browser_download_url;
-        } else if (isMac) {
-          const dmgAsset = data.assets.find((asset: any) => asset.name.endsWith('.dmg'));
-          if (dmgAsset) downloadUrl = dmgAsset.browser_download_url;
-        }
-
-        setUpdateState({
-          available: true,
-          version: latestVersion,
-          downloadUrl: downloadUrl,
-          downloading: false,
-          readyToInstall: false,
-        });
-        setClosed(false);
-      } else {
-        console.log('La aplicación está actualizada');
-        if (manual) {
-          await anonidata.dialog.showInfo(
-            `La aplicación está actualizada.\n\nYa tienes la versión más reciente (v${currentVersion}).`,
-            'Buscar actualizaciones'
-          );
-        }
-      }
-    } catch (error: any) {
-      console.error('Error verificando actualizaciones:', error);
-      if (manual) {
-        await anonidata.dialog.showInfo(
-          `Ocurrió un error al buscar actualizaciones: ${error.message || error}`,
-          'Error'
-        );
-      }
-    }
-  };
-
-  const compareVersions = (v1: string, v2: string): number => {
-    const parts1 = v1.split('.').map(Number);
-    const parts2 = v2.split('.').map(Number);
-
-    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-      const num1 = parts1[i] || 0;
-      const num2 = parts2[i] || 0;
-
-      if (num1 > num2) return 1;
-      if (num1 < num2) return -1;
-    }
-    return 0;
-  };
-
-  const handleDownload = async () => {
-    const url = updateState.downloadUrl || 'https://github.com/tban/anonidata/releases/latest';
-    try {
-      await anonidata.utils.openExternal(url);
-    } catch (error) {
-      console.error('Error abriendo url de descarga:', error);
-    }
-    setClosed(true);
-  };
-
-  const handleClose = () => {
-    setClosed(true);
-  };
-
-  if ((!updateState.available && !updateState.readyToInstall) || closed) {
+  if (!updateState.downloading) {
     return null;
   }
 
+  // Formatear bytes a MB
+  const formatMB = (bytes: number) => {
+    return (bytes / (1024 * 1024)).toFixed(1);
+  };
+
   return (
-    <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-2xl border border-gray-200 p-4 max-w-md z-50">
+    <div className="fixed bottom-4 right-4 bg-stone-900/90 rounded-lg shadow-2xl border border-stone-850 p-5 max-w-md w-full z-50 glass text-stone-100 animate-fade-in-up">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <h3 className="font-semibold text-gray-900">Actualización disponible</h3>
-          {updateState.version && (
-            <p className="text-sm text-gray-600">Versión {updateState.version}</p>
-          )}
+          <h3 className="font-semibold text-stone-200">Descargando actualización...</h3>
+          <p className="text-sm text-stone-400 mt-1">
+            {formatMB(updateState.downloaded)} MB / {formatMB(updateState.total)} MB
+          </p>
         </div>
-        <button
-          onClick={handleClose}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-          aria-label="Cerrar"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
       </div>
 
-      <div className="mb-3 text-sm text-gray-600">
-        Una nueva versión de AnoniData está disponible. Haz clic abajo para descargarla en tu equipo.
+      <div className="w-full bg-stone-800 rounded-full h-2.5 mt-4 overflow-hidden border border-stone-700">
+        <div 
+          className="bg-teal-500 h-2.5 rounded-full transition-all duration-300 ease-out" 
+          style={{ width: `${Math.max(0, Math.min(100, updateState.progress))}%` }}
+        ></div>
       </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={handleDownload}
-          className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-medium py-2 px-4 rounded-md transition-colors text-center cursor-pointer"
-        >
-          Descargar ahora
-        </button>
-        <button
-          onClick={handleClose}
-          className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors cursor-pointer"
-        >
-          Más tarde
-        </button>
+      
+      <div className="mt-2 text-right text-xs font-medium text-teal-400">
+        {Math.round(updateState.progress)}%
       </div>
     </div>
   );

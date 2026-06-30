@@ -5,8 +5,8 @@ import { anonidata } from '../lib/tauri-bridge'
 
 // Configurar worker de PDF.js
 // El worker está copiado en la carpeta public y Vite lo incluye en el build
-// Usar ruta relativa para que funcione en producción con Electron
-pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'
+// Usar ruta absoluta desde el root para que funcione en producción con Tauri
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
 interface PDFViewerProps {
   pdfPath: string
@@ -49,8 +49,14 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
         // Leer el archivo usando el bridge de Tauri
         // Esto es más seguro que fetch() con file:// URLs
-        const arrayBuffer = await anonidata.utils.readPdfFile(pdfPath)
-        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+        const rawData = await anonidata.utils.readPdfFile(pdfPath)
+        const dataArray = new Uint8Array(rawData)
+        const loadingTask = pdfjsLib.getDocument({ 
+          data: dataArray,
+          standardFontDataUrl: '/standard_fonts/',
+          cMapUrl: '/cmaps/',
+          cMapPacked: true
+        })
         const doc = await loadingTask.promise
 
         if (!cancelled) {
@@ -61,7 +67,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
       } catch (err) {
         if (!cancelled) {
           console.error('Error loading PDF:', err)
-          setError('Error al cargar el PDF')
+          setError(`Error al cargar el PDF: ${err instanceof Error ? err.message : String(err)}`)
         }
       } finally {
         if (!cancelled) {

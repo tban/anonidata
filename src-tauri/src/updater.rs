@@ -177,6 +177,51 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
         return Err(format!("Installer download server returned: {}", download_response.status()));
     }
 
+    if let Some(content_type) = download_response.headers().get(reqwest::header::CONTENT_TYPE) {
+        if content_type.to_str().unwrap_or("").starts_with("text/html") {
+            log::info!("Intercepted Google Drive HTML warning page. Attempting bypass...");
+            let text = download_response.text().map_err(|e| e.to_string())?;
+            
+            let mut uuid = "";
+            if let Some(pos) = text.find("name=\"uuid\" value=\"") {
+                let start = pos + 19;
+                if let Some(end) = text[start..].find("\"") {
+                    uuid = &text[start..start + end];
+                }
+            }
+            
+            let mut confirm = "t";
+            if let Some(pos) = text.find("name=\"confirm\" value=\"") {
+                let start = pos + 22;
+                if let Some(end) = text[start..].find("\"") {
+                    confirm = &text[start..start + end];
+                }
+            }
+            
+            let mut file_id = "";
+            if let Some(pos) = download_url.find("id=") {
+                let start = pos + 3;
+                if let Some(end) = download_url[start..].find('&') {
+                    file_id = &download_url[start..start + end];
+                } else {
+                    file_id = &download_url[start..];
+                }
+            }
+            
+            if !file_id.is_empty() {
+                let bypass_url = format!("https://drive.usercontent.google.com/download?id={}&export=download&confirm={}&uuid={}", file_id, confirm, uuid);
+                log::info!("Retrying download with bypass URL: {}", bypass_url);
+                download_response = client.get(&bypass_url).send().map_err(|e| format!("Failed bypass request: {}", e))?;
+                
+                if !download_response.status().is_success() {
+                    return Err(format!("Bypass download failed: {}", download_response.status()));
+                }
+            } else {
+                return Err("Failed to extract file ID from Google Drive URL".to_string());
+            }
+        }
+    }
+
     let total_size = download_response.content_length().unwrap_or(0);
     
     let mut out_file = File::create(&temp_file_path)

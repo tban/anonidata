@@ -1,6 +1,6 @@
 # AnoniData
 
-**Aplicación de escritorio para anonimización de PDFs conforme a RGPD**
+AnoniData es una herramienta de escritorio basada en **Tauri, React, Rust y Python** diseñada para eliminar de forma irreversible datos de carácter personal (PII) en documentos PDF. No se toca el PDF original, generando un nuevo PDF anonimizado en la misma carpeta del documento. Todo el procesamiento se realiza de manera 100% local en tu ordenador, garantizando el cumplimiento del RGPD (Reglamento General de Protección de Datos) y el principio de 'Zero Data Retention'
 
 ## Características
 
@@ -21,18 +21,19 @@
 
 ## Tecnologías
 
-### Frontend
-- Electron 28
-- React 18 + TypeScript
-- TailwindCSS
-- Zustand (state management)
+### Frontend / UI
+- **Tauri** (para la ventana de la aplicación y APIs nativas)
+- **React 18** + **TypeScript**
+- **TailwindCSS** (estilado moderno)
+- **Zustand** (gestor de estado de React)
 
-### Backend
-- Python 3.11+
-- PyMuPDF (procesamiento PDF)
-- Tesseract + EasyOCR (OCR)
-- spaCy (NLP en español)
-- OpenCV (detección visual)
+### Backend / Procesamiento
+- **Rust** (núcleo de Tauri, gestión de ventanas, archivos y autocomprobación de actualizaciones)
+- **Python 3.11+** (procesamiento inteligente y OCR, compilado como sidecar)
+- **PyMuPDF** (análisis, manipulación y renderizado de PDFs)
+- **Tesseract OCR** + **EasyOCR** (detección de texto y extracción de caracteres)
+- **spaCy** (reconocimiento de entidades nombradas en español - NLP)
+- **OpenCV** (procesamiento de imágenes y detección de firmas y códigos QR)
 
 ## Instalación para Desarrollo
 
@@ -99,9 +100,9 @@ Salida: `release/AnoniData-1.0.0-universal.dmg`
 
 ```
 ┌─────────────────────────────────────┐
-│   Electron (UI + File Management)   │
+│    Tauri / React (UI + Shell)       │
 └─────────────────┬───────────────────┘
-                  │ IPC
+                  │ IPC (Sidecar)
 ┌─────────────────┴───────────────────┐
 │   Python Backend (PII Detection)    │
 │   ├── PDF Parser (PyMuPDF)          │

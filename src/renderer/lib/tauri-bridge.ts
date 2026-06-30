@@ -64,9 +64,12 @@ export const anonidata = {
   utils: {
     openExternal: (url: string) => openUrl(url),
     deleteFile: (path: string) => invoke<boolean>('delete_file', { path }),
-    readPdfFile: (path: string) => invoke<number[]>('read_pdf_file', { path }),
-    checkPdfType: (path: string) => invoke<string>('check_pdf_type', { path }),
+    readPdfFile: (path: string) => invoke<ArrayBuffer>('read_pdf_file', { path }),
+    checkPdfType: (path: string) => invoke<any>('check_pdf_type', { path }),
     applyOcr: (path: string, language: string) => invoke<any>('apply_ocr', { path, language }),
+    restartBackend: () => invoke<boolean>('restart_backend'),
+    getFileSize: (path: string) => invoke<number>('get_file_size', { path }),
+    fetchUrlBackend: (url: string) => invoke<any>('fetch_url_backend', { url }),
   },
 };
 

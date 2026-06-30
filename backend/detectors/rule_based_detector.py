@@ -19,6 +19,7 @@ except ImportError:
 
 from processors.pdf_parser import TextBlock
 from detectors.models import PIIMatch
+from utils.geometry import rect_inside_bbox, find_precise_bbox
 
 
 def get_resource_path(relative_path: str) -> Path:
@@ -110,31 +111,25 @@ class RuleBasedDetector:
             logger.error(traceback.format_exc())
             raise
 
-    def detect_in_text_blocks(self, text_blocks: List[TextBlock], pdf_path: Path) -> List[PIIMatch]:
+    def detect_in_text_blocks(self, text_blocks: List[TextBlock], doc) -> List[PIIMatch]:
         """
         Detecta PII en bloques de texto usando las reglas configuradas
 
         Args:
             text_blocks: Lista de bloques de texto
-            pdf_path: Ruta al PDF (para abrir y calcular coordenadas precisas)
+            doc: Documento PDF abierto (para calcular coordenadas precisas)
 
         Returns:
             Lista de PIIMatch con coordenadas precisas
         """
         matches = []
 
-        # Abrir el PDF para poder buscar coordenadas precisas
-        doc = fitz.open(pdf_path)
-
-        try:
-            for block in text_blocks:
-                for rule in self.rules:
-                    rule_matches = self._find_matches_in_block(
-                        block, rule, doc
-                    )
-                    matches.extend(rule_matches)
-        finally:
-            doc.close()
+        for block in text_blocks:
+            for rule in self.rules:
+                rule_matches = self._find_matches_in_block(
+                    block, rule, doc
+                )
+                matches.extend(rule_matches)
 
         logger.debug(f"Detector basado en reglas encontró {len(matches)} coincidencias")
         return matches
@@ -143,7 +138,7 @@ class RuleBasedDetector:
         self,
         block: TextBlock,
         rule: AnonymizationRule,
-        doc: fitz.Document
+        doc
     ) -> List[PIIMatch]:
         """
         Encuentra coincidencias de una regla en un bloque de texto
@@ -193,7 +188,7 @@ class RuleBasedDetector:
 
     def _calculate_precise_bbox(
         self,
-        doc: fitz.Document,
+        doc,
         page_num: int,
         full_text: str,
         start_pos: int,
@@ -214,65 +209,7 @@ class RuleBasedDetector:
         Returns:
             Tupla (x0, y0, x1, y1) o None si no se puede calcular
         """
-        try:
-            # Validar que block_bbox no tenga valores None
-            if block_bbox and None in block_bbox:
-                logger.warning(f"block_bbox contiene valores None: {block_bbox}")
-                return None
+        target_text = full_text[start_pos:end_pos]
+        return find_precise_bbox(doc, page_num, target_text, block_bbox)
 
-            page = doc[page_num]
-            target_text = full_text[start_pos:end_pos]
 
-            # Buscar el texto en la página
-            text_instances = page.search_for(target_text)
-
-            if text_instances:
-                # Si hay múltiples instancias, usar la que esté dentro del block_bbox
-                for rect in text_instances:
-                    if self._rect_inside_bbox(rect, block_bbox):
-                        return (rect.x0, rect.y0, rect.x1, rect.y1)
-
-                # Si ninguna está dentro, usar la primera
-                rect = text_instances[0]
-                return (rect.x0, rect.y0, rect.x1, rect.y1)
-
-            # Fallback: usar bbox del bloque completo
-            logger.debug(f"No se encontró bbox precisa para '{target_text}', usando bbox del bloque")
-            return block_bbox
-
-        except Exception as e:
-            logger.warning(f"Error calculando bbox precisa: {e}")
-            return block_bbox
-
-    def _rect_inside_bbox(
-        self,
-        rect: fitz.Rect,
-        bbox: Tuple[float, float, float, float]
-    ) -> bool:
-        """
-        Verifica si un rectángulo está dentro de una bbox
-
-        Args:
-            rect: Rectángulo de PyMuPDF
-            bbox: Tupla (x0, y0, x1, y1)
-
-        Returns:
-            True si rect está dentro de bbox
-        """
-        try:
-            x0, y0, x1, y1 = bbox
-
-            # Validar que ninguna coordenada sea None
-            if None in (x0, y0, x1, y1):
-                logger.warning(f"Bbox contiene valores None: {bbox}")
-                return False
-
-            # Verificar si el centro del rect está dentro del bbox
-            center_x = (rect.x0 + rect.x1) / 2
-            center_y = (rect.y0 + rect.y1) / 2
-
-            return (x0 <= center_x <= x1) and (y0 <= center_y <= y1)
-
-        except (TypeError, ValueError) as e:
-            logger.warning(f"Error en _rect_inside_bbox: {e}, bbox={bbox}")
-            return False

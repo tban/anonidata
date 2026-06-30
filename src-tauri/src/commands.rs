@@ -119,7 +119,7 @@ pub async fn finalize_anonymization(
 pub async fn check_pdf_type(
     state: State<'_, AppState>,
     path: String,
-) -> Result<String, String> {
+) -> Result<Value, String> {
     let request = json!({
         "action": "check_pdf_type",
         "files": vec![path]
@@ -128,17 +128,17 @@ pub async fn check_pdf_type(
     
     if let Some(results) = response.get("results").and_then(|r| r.as_array()) {
         if let Some(first) = results.first() {
-            if let Some(pdf_type) = first.get("type").and_then(|t| t.as_str()) {
-                return Ok(pdf_type.to_string());
-            }
+            return Ok(first.clone());
         }
     }
     Err("Invalid response from PDF type checker".into())
 }
 
 #[tauri::command]
-pub fn read_pdf_file(path: String) -> Result<Vec<u8>, String> {
-    std::fs::read(path).map_err(|e| e.to_string())
+pub fn read_pdf_file(path: String) -> Result<tauri::ipc::Response, String> {
+    std::fs::read(path)
+        .map(|bytes| tauri::ipc::Response::new(bytes))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -186,4 +186,43 @@ pub async fn apply_ocr(
         "language": language
     });
     send_sidecar_request(state, request, Duration::from_secs(600)).await
+}
+
+#[tauri::command]
+pub async fn restart_backend(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let mut controller_guard = state.controller.lock().await;
+    
+    // Kill the current child if it exists
+    if let Some(controller) = controller_guard.take() {
+        let _ = controller.child.kill();
+        println!("Killed running backend sidecar process due to cancellation");
+    }
+    
+    // Spawn a new sidecar process
+    let new_controller = crate::spawn_sidecar(&app)?;
+    *controller_guard = Some(new_controller);
+    println!("Spawned new backend sidecar process");
+    
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn get_file_size(path: String) -> Result<u64, String> {
+    let metadata = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    Ok(metadata.len())
+}
+
+#[tauri::command]
+pub async fn fetch_url_backend(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<Value, String> {
+    let request = json!({
+        "action": "fetch_url",
+        "url": url
+    });
+    send_sidecar_request(state, request, Duration::from_secs(30)).await
 }

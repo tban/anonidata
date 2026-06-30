@@ -1,7 +1,7 @@
 {
   "name": "anonidata",
   "productName": "Anonidata",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Aplicación de escritorio para anonimización de PDFs conforme a RGPD",
   "author": "AnoniData",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "dev:renderer": "vite",
     "build": "npx tauri build",
     "build:renderer": "vite build",
-    "build:backend": "node -e \"const p=process.platform==='win32'?'venv/Scripts/pyinstaller':'venv/bin/pyinstaller';require('child_process').execSync(p+' --clean anonidata-backend.spec',{stdio:'inherit'})\"",
+    "build:backend": "./scripts/build-backend.sh",
     "test": "vitest",
     "test:backend": "cd backend && pytest",
     "lint": "eslint src --ext .ts,.tsx",
