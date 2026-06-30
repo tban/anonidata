@@ -20,9 +20,9 @@ try:
 except:
     print("ADVERTENCIA: spaCy no disponible")
 
-# Construir lista de datas
+# Construir lista de datas usando rutas relativas
 datas_list = [
-    ('/Users/tban/Documents/Desarrollos/anonidata/backend/config', 'config'),
+    ('backend/config', 'config'),
 ]
 
 # Agregar modelo spaCy si existe
@@ -33,10 +33,10 @@ if spacy_model_path and spacy_model_path.exists():
 else:
     print("⚠ Modelo spaCy no encontrado - NER no estará disponible")
 
-print(f"✓ Incluyendo configuración desde: /Users/tban/Documents/Desarrollos/anonidata/backend/config")
+print("✓ Incluyendo configuración desde: backend/config")
 
 a = Analysis(
-    ['/Users/tban/Documents/Desarrollos/anonidata/backend/main.py'],
+    ['backend/main.py'],
     pathex=[],
     binaries=[],
     datas=datas_list,
