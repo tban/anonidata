@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AnoniData",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "identifier": "com.anonidata.app",
   "build": {
     "beforeDevCommand": "npm run dev:renderer",
@@ -43,6 +43,11 @@
       "minimumSystemVersion": "10.15",
       "entitlements": "../build/entitlements.mac.plist",
       "hardenedRuntime": true
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "hooks.nsh"
+      }
     }
   },
   "plugins": {}

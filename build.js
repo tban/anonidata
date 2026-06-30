@@ -7,7 +7,11 @@ const { execSync } = require('child_process');
 // ==========================================
 const PROJECT_ROOT = process.cwd();
 // Directorio final donde se guardarán los instaladores listos (puedes inyectar Variables de Entorno en tu CI/CD)
-const FINAL_DEST_DIR = process.env.FINAL_DEST_DIR || '/Users/tban/Library/CloudStorage/GoogleDrive-tbanrguez@gmail.com/Mi unidad/PUBLICAPPS/ANONIDATA';
+let defaultDestDir = '/Users/tban/Library/CloudStorage/GoogleDrive-tbanrguez@gmail.com/Mi unidad/PUBLICAPPS/ANONIDATA';
+if (process.platform === 'win32') {
+    defaultDestDir = path.join(process.env.USERPROFILE || 'C:\\', 'Desktop', 'Anonidata_Release');
+}
+const FINAL_DEST_DIR = process.env.FINAL_DEST_DIR || defaultDestDir;
 // Directorio temporal interno donde electron-builder arroja los .exe
 const OUTPUT_DIR = path.join(PROJECT_ROOT, 'release');
 // Rutas de archivos a usar
@@ -67,23 +71,27 @@ function runWorkflow() {
 
         // 3. COMPILACIÓN / EMPAQUETADO
         console.log('\n3. Iniciando el proceso de empaquetado del ecosistema (Vite + Rust/Tauri + Backend)...');
+        console.log('   [Ejecutando npm run build:backend...]');
+        execSync('npm run build:backend', { stdio: 'inherit' });
         console.log('   [Ejecutando npm run build...]');
-        execSync('npm run build', { stdio: 'inherit' });
+        const buildCmd = process.platform === 'darwin' ? 'npm run build -- --target universal-apple-darwin' : 'npm run build';
+        execSync(buildCmd, { stdio: 'inherit' });
         console.log('   -> Compilación técnica finalizada.');
 
         // 4. LIMPIEZA DE VERSIÓN ANTERIOR
-        console.log('\n4. Limpiando versiones pasadas en el directorio destino...');
+        console.log('\n4. Limpiando versión anterior de la misma plataforma en el directorio destino...');
+        const targetExtension = process.platform === 'win32' ? '.exe' : '.dmg';
         const existingFiles = fs.readdirSync(FINAL_DEST_DIR);
         existingFiles.forEach(file => {
-            if (file.endsWith('.exe') || file.endsWith('.dmg')) {
+            if (file.endsWith(targetExtension)) {
                 fs.unlinkSync(path.join(FINAL_DEST_DIR, file));
-                console.log(`   -> Eliminado antiguo: ${file}`);
+                console.log(`   -> Eliminado antiguo de esta plataforma: ${file}`);
             }
         });
 
         // 5. DESPLIEGUE INTERNO
         console.log('\n5. Trasladando los nuevos binarios a la carpeta de despliegue principal...');
-        const macDmgDir = path.join(PROJECT_ROOT, 'src-tauri', 'target', 'release', 'bundle', 'dmg');
+        const macDmgDir = path.join(PROJECT_ROOT, 'src-tauri', 'target', 'universal-apple-darwin', 'release', 'bundle', 'dmg');
         const winNsisDir = path.join(PROJECT_ROOT, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
         
         let targetFiles = [];
@@ -114,7 +122,7 @@ function runWorkflow() {
             const oldPath = path.join(sourceDir, fileName);
 
             // Nombre fijo para el ejecutable o dmg
-            let finalName = fileName.endsWith('.dmg') ? 'AnoniData.dmg' : 'AnoniData.exe';
+            let finalName = fileName.endsWith('.dmg') ? 'Anonidata.dmg' : 'Anonidata.exe';
 
             const newPath = path.join(FINAL_DEST_DIR, finalName);
 
@@ -125,24 +133,105 @@ function runWorkflow() {
 
         // 6. ACTUALIZACIÓN DE METADATOS
         console.log('\n6. Actualizando archivo maestro version.json en el destino...');
+        
+        // Conservar otros instaladores ya existentes en el directorio de destino
+        const installersList = [...generatedInstallers];
+        const allDriveFiles = fs.readdirSync(FINAL_DEST_DIR);
+        allDriveFiles.forEach(file => {
+            if ((file.endsWith('.exe') || file.endsWith('.dmg')) && !installersList.includes(file)) {
+                installersList.push(file);
+            }
+        });
+
         const newMetadata = {
             productName: productName,
             version: appVersion,
             build: nextBuild,
             date: new Date().toISOString(),
-            installers: generatedInstallers,
-            mainInstallerFilename: generatedInstallers.find(f => f.toLowerCase().includes('setup')) || generatedInstallers[0],
-            downloadUrls: {
-                "AnoniData.dmg": DRIVE_URLS.dmg,
-                "AnoniData.exe": DRIVE_URLS.exe,
-                "version.json": DRIVE_URLS.version_json
+            platforms: {
+                "mac": {
+                    "filename": "Anonidata.dmg",
+                    "url": DRIVE_URLS.dmg
+                },
+                "windows": {
+                    "filename": "Anonidata.exe",
+                    "url": DRIVE_URLS.exe
+                }
             }
         };
         fs.writeFileSync(VERSION_EXTERNAL_FILE, JSON.stringify(newMetadata, null, 2));
-        console.log(`   -> Metadatos consolidados con éxito.`);
 
-        // 7. LIMPIEZA POST-BUILD
-        console.log('\n7. Realizando limpieza post-build del entorno local...');
+        // Despliegue a GitHub Pages si se provee la ruta
+        const githubPagesDir = process.env.GITHUB_PAGES_DIR;
+        if (githubPagesDir && fs.existsSync(githubPagesDir)) {
+            console.log('\n   -> Copiando version.json al repositorio de GitHub Pages y haciendo push...');
+            const githubJsonPath = path.join(githubPagesDir, 'ANONIDATA', 'version.json');
+            // Crear subcarpeta ANONIDATA si no existe
+            if (!fs.existsSync(path.dirname(githubJsonPath))) {
+                fs.mkdirSync(path.dirname(githubJsonPath), { recursive: true });
+            }
+            fs.writeFileSync(githubJsonPath, JSON.stringify(newMetadata, null, 2));
+            try {
+                execSync(`cd "${githubPagesDir}" && git add . && git commit -m "Update AnoniData version to ${appVersion} Build ${nextBuild}" && git push`, { stdio: 'inherit' });
+                console.log('   -> Push a GitHub Pages exitoso.');
+            } catch (gitErr) {
+                console.error('   [!] Error al hacer push a GitHub Pages:', gitErr.message);
+            }
+        } else {
+            console.log('\n   [!] No se ha definido GITHUB_PAGES_DIR. Por favor copia version.json a tu repo manualmente.');
+        }
+
+        // 7. DESPLIEGUE DE LOGO Y README EN EL DESTINO
+        console.log('\n7. Copiando logo y generando README.md en el destino...');
+        
+        // Copiar logo
+        const logoSrc = path.join(PROJECT_ROOT, 'public', 'logo.png');
+        const logoDst = path.join(FINAL_DEST_DIR, 'logo.png');
+        if (fs.existsSync(logoSrc)) {
+            fs.copyFileSync(logoSrc, logoDst);
+            console.log('   -> Logo copiado a la carpeta de destino.');
+        } else {
+            console.warn('   [!] Advertencia: No se encontró el logo original en public/logo.png');
+        }
+
+        // Generar README.md
+        const readmeDst = path.join(FINAL_DEST_DIR, 'README.md');
+        const readmeContent = `# AnoniData
+
+AnoniData es una herramienta de escritorio diseñada para eliminar de forma irreversible datos de carácter personal (PII) en documentos PDF. No se toca el PDF original, generando un nuevo PDF anonimizado en la misma carpeta del documento. Todo el procesamiento se realiza de manera 100% local en tu ordenador, garantizando el cumplimiento  del RGPD (Reglamento General de Protección de Datos) y el principio de 'Zero Data Retention'
+
+## 🚀 Últimas Novedades
+
+- **Migración a Tauri v2**: Transición desde Electron a Tauri v2 para un rendimiento optimizado, menor consumo de memoria y tamaño de instalador reducido, además de un aislamiento de seguridad mejorado en el proceso IPC.
+- **Implementación de Dark Mode**: Interfaz adaptativa con soporte completo para modo oscuro y diseño renovado de iconos, ofreciendo una experiencia visual premium y moderna.
+- **Detección Visual Integrada (OCR)**: Mejoras significativas en el backend de Python para la detección y redacción de firmas manuscritas y códigos QR dentro de los documentos.
+- **Publicación Directa en Google Drive**: Automatización de la compilación y copia del instalador ejecutable y sus metadatos a la unidad pública de Google Drive para simplificar la distribución.
+
+## 🛠️ Características Técnicas de Desarrollo
+
+El desarrollo de AnoniData se basa en una arquitectura híbrida de alto rendimiento:
+
+### Arquitectura y Frameworks
+- **Tauri v2 (Rust)**: Actúa como el contenedor de escritorio seguro, gestionando la ventana nativa y la comunicación IPC (Inter-Process Communication) securizada con el backend.
+- **Frontend (React 18 + TypeScript)**: Interfaz de usuario interactiva y fluida construida sobre React con TypeScript y estilizada con TailwindCSS.
+- **Backend (Python 3.11+)**: Ejecutado localmente como un binario sidecar compilado con PyInstaller, encargado del procesamiento pesado de PDF y análisis de datos.
+
+### Procesamiento de PDFs y Lenguaje Natural (NLP)
+- **PyMuPDF**: Manipulación y redacción nativa e irreversible de PDFs (eliminación del contenido subyacente y metadatos).
+- **spaCy (Modelo en español: es_core_news_lg)**: Procesamiento de Lenguaje Natural para identificar entidades nombradas (nombres de personas, localizaciones, etc.).
+- **Tesseract OCR / EasyOCR**: Reconocimiento óptico de caracteres para extraer texto de imágenes integradas y PDFs no digitalizados.
+- **OpenCV & PyZbar**: Procesamiento de imagen para la detección de firmas manuscritas y códigos de barras/QR.
+
+### Seguridad y Privacidad
+- **Ejecución 100% local**: No requiere conexión a internet para funcionar, ni realiza peticiones externas.
+- **Zero Data Retention**: No se almacenan copias temporales de los documentos analizados de forma persistente.
+- **Logs Sanitizados**: El sistema de logs local oculta y reemplaza cualquier dato personal detectado antes de escribir en disco.
+`;
+        fs.writeFileSync(readmeDst, readmeContent, 'utf-8');
+        console.log('   -> Archivo README.md generado con éxito.');
+
+        // 8. LIMPIEZA POST-BUILD
+        console.log('\n8. Realizando limpieza post-build del entorno local...');
         fs.unlinkSync(VERSION_LOCAL_FILE);
         localVersionCreated = false;
         console.log('   -> Inyección temporal local revertida ✔');

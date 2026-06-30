@@ -4,6 +4,8 @@ import { ReviewScreen } from './screens/ReviewScreen';
 import { UpdateNotification } from './components/UpdateNotification';
 import logoImage from './assets/logo.png';
 import { anonidata, listen } from './lib/tauri-bridge';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { ask } from '@tauri-apps/plugin-dialog';
 
 
 interface FileItem {
@@ -15,6 +17,8 @@ interface FileItem {
   result?: any;
   pdfType?: 'text' | 'image' | 'text_ocr' | 'detecting';
   ocrOption?: 'yes' | 'no';
+  step?: string;
+  pages?: number;
 }
 
 interface ReviewState {
@@ -35,6 +39,25 @@ function App() {
   const [isDetecting, setIsDetecting] = useState<number | null>(null);
   const [processingStep, setProcessingStep] = useState<string>('');
   const [ocrPromptFiles, setOcrPromptFiles] = useState<string[]>([]);
+  const [bulkOcrDecision, setBulkOcrDecision] = useState<'yes' | 'no' | null>(null);
+  const bulkOcrDecisionRef = React.useRef<'yes' | 'no' | null>(null);
+
+  const reviewStateRef = React.useRef<ReviewState | null>(null);
+  const filesRef = React.useRef<FileItem[]>([]);
+  const handleCancelReviewRef = React.useRef<() => Promise<void>>();
+
+  useEffect(() => {
+    bulkOcrDecisionRef.current = bulkOcrDecision;
+  }, [bulkOcrDecision]);
+
+  useEffect(() => {
+    reviewStateRef.current = reviewState;
+  }, [reviewState]);
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
   const [completionData, setCompletionData] = useState<{
     type: 'success' | 'partial' | 'error' | 'critical';
     successCount: number;
@@ -48,74 +71,245 @@ function App() {
 
   // Listener para el menú de la aplicación
   useEffect(() => {
-    const unlisten = listen('show-about-modal', () => {
+    const unlistenAbout = listen('show-about-modal', () => {
       setShowAboutModal(true);
     });
 
+    const unlistenUpdates = listen('check-updates', () => {
+      console.log('App: check-updates menu event received');
+      window.dispatchEvent(new CustomEvent('trigger-check-updates'));
+    });
+
     return () => {
-      unlisten.then(fn => fn());
+      unlistenAbout.then(fn => fn());
+      unlistenUpdates.then(fn => fn());
+    };
+  }, []);
+
+  // Listener para recibir actualizaciones de progreso en tiempo real del backend
+  useEffect(() => {
+    interface ProgressPayload {
+      status: string;
+      file: string;
+      progress: number;
+      step: string;
+    }
+
+    const unlisten = listen<ProgressPayload>('backend-progress', (event) => {
+      const payload = event.payload;
+      if (payload && payload.file) {
+        setFiles((prev) =>
+          prev.map((f) => {
+            if (f.path === payload.file) {
+              return {
+                ...f,
+                progress: payload.progress,
+                step: payload.step,
+              };
+            }
+            return f;
+          })
+        );
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
     };
   }, []);
 
   // Función para detectar si un PDF es de texto o imagen usando el backend para consistencia
-  const detectPdfType = useCallback(async (filePath: string): Promise<'text' | 'image'> => {
+  const detectPdfType = useCallback(async (filePath: string): Promise<{ type: 'text' | 'image'; pages?: number }> => {
     try {
       // Usar directamente el backend (PyMuPDF) que tiene el mismo criterio que el proceso de anonimización
       const result = await anonidata.utils.checkPdfType(filePath);
-      if (result === 'image' || result === 'text') {
-        return result as 'image' | 'text';
+      if (result && (result.type === 'image' || result.type === 'text')) {
+        return {
+          type: result.type as 'image' | 'text',
+          pages: result.pages
+        };
       }
-      return 'text';
+      return { type: 'text' };
     } catch (error) {
       console.error('Error detectando tipo PDF con backend:', error);
       // Fallback seguro a text para permitir intento de procesado
-      return 'text';
+      return { type: 'text' };
     }
   }, []);
 
+  const processSingleOcrDecision = useCallback(async (filePath: string, decision: 'yes' | 'no') => {
+    if (decision === 'yes') {
+      // Poner el archivo en estado de procesamiento OCR
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.path === filePath ? { ...f, status: 'ocr_processing' } : f
+        )
+      );
+
+      try {
+        // Ejecutar OCR en español en el backend
+        const result = await anonidata.utils.applyOcr(filePath, 'spa');
+
+        if (result.success && result.ocrPdfPath) {
+          // Obtener el nuevo tamaño
+          let size = 0;
+          try {
+            size = await anonidata.utils.getFileSize(result.ocrPdfPath);
+          } catch (e) {
+            console.error('Error getting size for OCR PDF:', e);
+          }
+
+          const ocrFileName = result.ocrPdfPath.split(/[/\\]/).pop() || result.ocrPdfPath;
+
+          // Reemplazar la entrada original por el nuevo PDF de texto convertido
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.path === filePath
+                ? {
+                    ...f,
+                    path: result.ocrPdfPath,
+                    name: ocrFileName,
+                    size: size || f.size,
+                    status: 'pending',
+                    pdfType: 'text_ocr',
+                    ocrOption: 'yes'
+                  }
+                : f
+            )
+          );
+        } else {
+          console.error('OCR application failed:', result.error);
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.path === filePath ? { ...f, status: 'error', ocrOption: 'no' } : f
+            )
+          );
+          await anonidata.dialog.showInfo(
+            `Error al aplicar OCR: ${result.error || 'Error desconocido'}`,
+            'Error'
+          );
+        }
+      } catch (error) {
+        console.error('Error applying OCR:', error);
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.path === filePath ? { ...f, status: 'error', ocrOption: 'no' } : f
+          )
+        );
+        await anonidata.dialog.showInfo(
+          `Error al aplicar OCR: ${error}`,
+          'Error'
+        );
+      }
+    } else {
+      setFiles((prev) =>
+        prev.map((f) => (f.path === filePath ? { ...f, ocrOption: 'no' } : f))
+      );
+    }
+  }, []);
+
+  const handleOcrDecision = useCallback(async (filePath: string, decision: 'yes' | 'no' | 'yes_all' | 'no_all') => {
+    const isAll = decision === 'yes_all' || decision === 'no_all';
+    const finalDecision: 'yes' | 'no' = (decision === 'yes' || decision === 'yes_all') ? 'yes' : 'no';
+
+    if (isAll) {
+      setBulkOcrDecision(finalDecision);
+      bulkOcrDecisionRef.current = finalDecision;
+
+      // Hacer una copia local de la cola para procesar
+      const filesToProcess = [...ocrPromptFiles];
+      
+      // Limpiar cola de prompts inmediatamente para cerrar el modal
+      setOcrPromptFiles([]);
+
+      // Procesar secuencialmente
+      for (const path of filesToProcess) {
+        await processSingleOcrDecision(path, finalDecision);
+      }
+    } else {
+      setOcrPromptFiles((prev) => prev.filter((p) => p !== filePath));
+      await processSingleOcrDecision(filePath, finalDecision);
+    }
+  }, [ocrPromptFiles, processSingleOcrDecision]);
+
+  const processFilePdfTypeDetection = useCallback(async (file: FileItem) => {
+    try {
+      const { type: pdfType, pages } = await detectPdfType(file.path);
+
+      // Mostrar 100% brevemente para una transición visual suave
+      setFiles((prev) =>
+        prev.map((f) => (f.path === file.path ? { ...f, progress: 100, step: 'Formato clasificado' } : f))
+      );
+
+      // Esperar a que la transición de la barra de progreso a 100% termine (400ms)
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      setFiles((prev) =>
+        prev.map((f) => (f.path === file.path ? { ...f, pdfType, pages } : f))
+      );
+
+      if (pdfType === 'image') {
+        if (bulkOcrDecisionRef.current === 'yes') {
+          processSingleOcrDecision(file.path, 'yes');
+        } else if (bulkOcrDecisionRef.current === 'no') {
+          setFiles((prev) =>
+            prev.map((f) => (f.path === file.path ? { ...f, ocrOption: 'no' } : f))
+          );
+        } else {
+          setOcrPromptFiles((prev) => [...prev, file.path]);
+        }
+      }
+    } catch (e) {
+      console.error('Error detectando tipo de PDF:', e);
+    }
+  }, [detectPdfType, processSingleOcrDecision]);
+
   const handleSelectFiles = useCallback(async () => {
+    setBulkOcrDecision(null);
+    bulkOcrDecisionRef.current = null;
     const filePaths = await anonidata.dialog.openFile();
     if (filePaths.length > 0) {
-      const newFiles: FileItem[] = filePaths.map((filePath) => {
-        const fileName = filePath.split('/').pop() || filePath;
+      const newFilesPromises = filePaths.map(async (filePath) => {
+        const fileName = filePath.split(/[/\\]/).pop() || filePath;
+        let size = 0;
+        try {
+          size = await anonidata.utils.getFileSize(filePath);
+        } catch (e) {
+          console.error('Error getting file size for selected file:', e);
+        }
         return {
           path: filePath,
           name: fileName,
-          size: 0, // No tenemos el tamaño desde el diálogo
+          size,
           status: 'pending' as const,
           progress: 0,
           pdfType: 'detecting' as const,
         };
       });
+
+      const newFiles = await Promise.all(newFilesPromises);
       setFiles((prev) => [...prev, ...newFiles]);
 
       // Detectar tipo de PDF para cada archivo en paralelo
-      newFiles.forEach(async (file) => {
-        const pdfType = await detectPdfType(file.path);
-        setFiles((prev) =>
-          prev.map((f) => (f.path === file.path ? { ...f, pdfType } : f))
-        );
-
-        if (pdfType === 'image') {
-          setOcrPromptFiles((prev) => [...prev, file.path]);
-        }
+      newFiles.forEach((file) => {
+        processFilePdfTypeDetection(file);
       });
     }
-  }, [detectPdfType]);
+  }, [processFilePdfTypeDetection]);
 
   // Procesar archivos a partir de sus rutas absolutas (Tauri 2 native drag-drop)
   const handleDroppedPaths = useCallback(async (filePaths: string[]) => {
     try {
-      const { stat } = await import('@tauri-apps/plugin-fs');
+      setBulkOcrDecision(null);
+      bulkOcrDecisionRef.current = null;
 
       const newFilesPromises = filePaths.map(async (filePath) => {
         const fileName = filePath.split(/[/\\]/).pop() || filePath;
         let size = 0;
         try {
-          const metadata = await stat(filePath);
-          size = metadata.size;
+          size = await anonidata.utils.getFileSize(filePath);
         } catch (e) {
-          console.error('Error getting metadata for dropped file:', e);
+          console.error('Error getting file size for dropped file:', e);
         }
 
         return {
@@ -132,20 +326,13 @@ function App() {
       setFiles((prev) => [...prev, ...newFiles]);
 
       // Detectar tipo de PDF para cada archivo en paralelo
-      newFiles.forEach(async (file) => {
-        const pdfType = await detectPdfType(file.path);
-        setFiles((prev) =>
-          prev.map((f) => (f.path === file.path ? { ...f, pdfType } : f))
-        );
-
-        if (pdfType === 'image') {
-          setOcrPromptFiles((prev) => [...prev, file.path]);
-        }
+      newFiles.forEach((file) => {
+        processFilePdfTypeDetection(file);
       });
     } catch (err) {
       console.error('Error processing dropped paths:', err);
     }
-  }, [detectPdfType]);
+  }, [processFilePdfTypeDetection]);
 
   // Listener para arrastrar y soltar archivos desde el OS usando la API nativa de Tauri 2
   useEffect(() => {
@@ -214,6 +401,9 @@ function App() {
       return;
     }
 
+    setBulkOcrDecision(null);
+    bulkOcrDecisionRef.current = null;
+
     const droppedFiles = Array.from(e.dataTransfer.files);
     const pdfFiles = droppedFiles.filter(
       (file) => file.type === 'application/pdf' || file.name.endsWith('.pdf')
@@ -240,18 +430,11 @@ function App() {
       setFiles((prev) => [...prev, ...newFiles]);
 
       // Detectar tipo de PDF para cada archivo en paralelo
-      newFiles.forEach(async (file) => {
-        const pdfType = await detectPdfType(file.path);
-        setFiles((prev) =>
-          prev.map((f) => (f.path === file.path ? { ...f, pdfType } : f))
-        );
-
-        if (pdfType === 'image') {
-          setOcrPromptFiles((prev) => [...prev, file.path]);
-        }
+      newFiles.forEach((file) => {
+        processFilePdfTypeDetection(file);
       });
     }
-  }, [detectPdfType]);
+  }, [processFilePdfTypeDetection]);
 
   const handleProcess = async () => {
     if (files.length === 0) return;
@@ -464,85 +647,20 @@ function App() {
     }
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
+    if (isProcessing || files.some((f) => f.status === 'ocr_processing' || f.status === 'processing')) {
+      try {
+        await anonidata.utils.restartBackend();
+        console.log('Backend sidecar restarted due to manual cancellation.');
+      } catch (error) {
+        console.error('Error restarting backend:', error);
+      }
+    }
     setFiles([]);
     setProcessResult(null);
-  };
-
-  const handleOcrDecision = async (filePath: string, decision: 'yes' | 'no') => {
-    // Cerrar el modal para el archivo actual
-    setOcrPromptFiles((prev) => prev.filter((p) => p !== filePath));
-
-    if (decision === 'yes') {
-      // Poner el archivo en estado de procesamiento OCR
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.path === filePath ? { ...f, status: 'ocr_processing' } : f
-        )
-      );
-
-      try {
-        // Ejecutar OCR en español en el backend
-        const result = await anonidata.utils.applyOcr(filePath, 'spa');
-
-        if (result.success && result.ocrPdfPath) {
-          // Obtener el nuevo tamaño
-          const { stat } = await import('@tauri-apps/plugin-fs');
-          let size = 0;
-          try {
-            const metadata = await stat(result.ocrPdfPath);
-            size = metadata.size;
-          } catch (e) {
-            console.error('Error getting metadata for OCR PDF:', e);
-          }
-
-          const ocrFileName = result.ocrPdfPath.split(/[/\\]/).pop() || result.ocrPdfPath;
-
-          // Reemplazar la entrada original por el nuevo PDF de texto convertido
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.path === filePath
-                ? {
-                    ...f,
-                    path: result.ocrPdfPath,
-                    name: ocrFileName,
-                    size: size || f.size,
-                    status: 'pending',
-                    pdfType: 'text_ocr',
-                    ocrOption: 'yes'
-                  }
-                : f
-            )
-          );
-        } else {
-          console.error('OCR application failed:', result.error);
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.path === filePath ? { ...f, status: 'error', ocrOption: 'no' } : f
-            )
-          );
-          await anonidata.dialog.showInfo(
-            `Error al aplicar OCR: ${result.error || 'Error desconocido'}`,
-            'Error'
-          );
-        }
-      } catch (error) {
-        console.error('Error applying OCR:', error);
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.path === filePath ? { ...f, status: 'error', ocrOption: 'no' } : f
-          )
-        );
-        await anonidata.dialog.showInfo(
-          `Error al aplicar OCR: ${error}`,
-          'Error'
-        );
-      }
-    } else {
-      setFiles((prev) =>
-        prev.map((f) => (f.path === filePath ? { ...f, ocrOption: 'no' } : f))
-      );
-    }
+    setIsProcessing(false);
+    setBulkOcrDecision(null);
+    bulkOcrDecisionRef.current = null;
   };
 
   const handleStartReview = async (fileIndex: number) => {
@@ -690,6 +808,61 @@ function App() {
     setReviewState(null);
   };
 
+  useEffect(() => {
+    handleCancelReviewRef.current = handleCancelReview;
+  }, [handleCancelReview]);
+
+  // Listener para el evento de solicitud de cierre de la ventana
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setupCloseListener = async () => {
+      const appWindow = getCurrentWindow();
+      const unsubscribe = await appWindow.onCloseRequested(async (event) => {
+        // Siempre prevenimos el cierre predeterminado primero
+        event.preventDefault();
+
+        if (reviewStateRef.current) {
+          // Si estamos en la pantalla de revisión manual, cancelar la revisión
+          if (handleCancelReviewRef.current) {
+            await handleCancelReviewRef.current();
+          }
+        } else {
+          // Verificar si hay archivos en estado 'pending'
+          const hasPending = filesRef.current.some((f) => f.status === 'pending');
+          if (hasPending) {
+            const confirmed = await ask(
+              'Hay archivos pendientes de procesamiento. ¿Estás seguro de que deseas cerrar la aplicación?',
+              {
+                title: 'Confirmar cierre',
+                kind: 'warning',
+                okLabel: 'Sí',
+                cancelLabel: 'No'
+              }
+            );
+            if (confirmed) {
+              await appWindow.destroy();
+            }
+          } else {
+            // Si no hay archivos pendientes, cerrar directamente
+            await appWindow.destroy();
+          }
+        }
+      });
+      unlisten = unsubscribe;
+    };
+
+    setupCloseListener().catch((err) => {
+      console.error('Error al configurar listener de cierre de ventana:', err);
+    });
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -712,13 +885,13 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50 to-cyan-50">
+    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-stone-900 to-zinc-950 text-stone-100 selection:bg-teal-500/30">
       <div className="container mx-auto px-4 py-8">
         {/* Header - Layout Flex para alinear icono grande y texto */}
         <header className="flex items-center gap-6 mb-10 relative">
           <button
             onClick={() => setShowAboutModal(true)}
-            className="flex-shrink-0 w-24 h-24 flex items-center justify-center hover:scale-105 transition-transform duration-200 rounded-2xl hover:shadow-lg bg-white/50 backdrop-blur-sm shadow-sm border border-white/60"
+            className="flex-shrink-0 w-24 h-24 flex items-center justify-center hover:scale-105 transition-transform duration-200 rounded-2xl hover:shadow-lg bg-stone-900/40 backdrop-blur-md shadow-lg border border-stone-800/80"
             title="Acerca de AnoniData"
           >
             <img
@@ -729,15 +902,9 @@ function App() {
           </button>
 
           <div className="flex-1 text-center pr-24"> {/* Padding right compensa el ancho del icono para mantener centrado el texto */}
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">AnoniData</h1>
-            <p className="text-gray-600">
-              Anonimización de PDFs conforme a RGPD by{' '}
-              <button
-                onClick={() => anonidata.utils.openExternal('https://x.com/TbanR')}
-                className="text-teal-600 hover:text-teal-700 hover:underline transition-colors cursor-pointer"
-              >
-                @TbanR
-              </button>
+            <h1 className="text-4xl font-bold text-stone-100 mb-2 tracking-tight">AnoniData</h1>
+            <p className="text-stone-400">
+              Anonimización de PDFs conforme a RGPD
             </p>
           </div>
         </header>
@@ -748,13 +915,13 @@ function App() {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           className={`border-4 border-dashed rounded-2xl p-12 mb-6 text-center transition-all duration-300 ${isDragActive
-            ? 'border-teal-500 glass scale-105 shadow-2xl'
-            : 'border-gray-300 bg-white shadow-md hover:shadow-lg'
+            ? 'border-teal-500 bg-teal-950/20 shadow-teal-500/10 scale-105 shadow-2xl'
+            : 'border-stone-800 bg-stone-900/30 hover:border-stone-700/60 shadow-md hover:shadow-lg'
             }`}
         >
-          <div className="text-gray-600">
+          <div className="text-stone-300">
             <svg
-              className="mx-auto h-16 w-16 mb-4 text-gray-400"
+              className="mx-auto h-16 w-16 mb-4 text-stone-500"
               stroke="currentColor"
               fill="none"
               viewBox="0 0 48 48"
@@ -783,7 +950,7 @@ function App() {
                 </button>
               </>
             )}
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-stone-500">
               Procesamiento 100% local - Tus datos nunca salen de tu ordenador
             </p>
           </div>
@@ -823,15 +990,14 @@ function App() {
 
         {/* File List */}
         {files.length > 0 && (
-          <div className="glass rounded-2xl shadow-xl p-6 mb-6 border border-gray-200/50">
+          <div className="glass rounded-2xl shadow-xl p-6 mb-6 border border-stone-800/60">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-gray-800">
+              <h2 className="text-xl font-semibold text-stone-200">
                 Archivos ({files.length})
               </h2>
               <button
                 onClick={handleClear}
-                className="text-sm text-gray-600 hover:text-red-600 transition-all scale-on-hover font-medium"
-                disabled={isProcessing}
+                className="text-sm text-stone-400 hover:text-red-400 transition-all scale-on-hover font-medium"
               >
                 Limpiar lista
               </button>
@@ -842,40 +1008,45 @@ function App() {
                 <div
                   key={idx}
                   className={`list-item border-2 rounded-xl p-4 transition-all duration-300 ${file.status === 'processing'
-                    ? 'border-teal-400 bg-teal-50 shadow-xl ring-2 ring-teal-200 scale-[1.02]'
-                    : 'border-gray-200 hover:border-teal-300 shadow-md hover:shadow-xl card-hover bg-white'
+                    ? 'border-teal-500 bg-teal-950/20 shadow-xl ring-2 ring-teal-900/60 scale-[1.02]'
+                    : 'border-stone-850 hover:border-teal-500/40 shadow-md hover:shadow-xl card-hover bg-stone-900/40'
                     }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-stone-200 truncate">
                         {file.name}
                       </p>
-                      <p className="text-xs text-gray-500 flex items-center gap-2">
+                      <p className="text-xs text-stone-400 flex items-center gap-2">
                         <span>{formatBytes(file.size)}</span>
+                        {file.pages !== undefined && (
+                          <>
+                            <span className="text-stone-600">•</span>
+                            <span>{file.pages} {file.pages === 1 ? 'página' : 'páginas'}</span>
+                          </>
+                        )}
                         {file.pdfType === 'detecting' && (
-                          <span className="inline-flex items-center gap-1 text-gray-400">
-                            <div className="w-3 h-3 border-2 border-gray-300 border-t-teal-500 rounded-full animate-spin"></div>
-                            <span>Detectando... puede tardar un poco</span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-950/50 text-stone-400 border border-stone-900/40 text-xs font-medium animate-pulse">
+                            🔍 Analizando tipo...
                           </span>
                         )}
                         {file.pdfType === 'text' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-950/50 text-blue-400 border border-blue-900/40 text-xs font-medium">
                             📄 Texto
                           </span>
                         )}
                         {file.pdfType === 'text_ocr' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/50 text-emerald-400 border border-emerald-900/40 text-xs font-medium">
                             📝 Texto OCR
                           </span>
                         )}
                         {file.pdfType === 'image' && (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                             file.ocrOption === 'yes'
-                              ? 'bg-emerald-100 text-emerald-700'
+                              ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-900/40'
                               : file.ocrOption === 'no'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-amber-100 text-amber-700'
+                              ? 'bg-red-950/50 text-red-400 border border-red-900/40'
+                              : 'bg-amber-950/50 text-amber-400 border border-amber-900/40'
                           }`}>
                             🖼️ Imagen {file.ocrOption === 'yes' && '(OCR)'}
                             {file.ocrOption === 'no' && '(Sin OCR)'}
@@ -885,27 +1056,27 @@ function App() {
                     </div>
                     <div className="ml-4">
                       {file.status === 'pending' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-stone-800 text-stone-300 border border-stone-700/50">
                           Pendiente
                         </span>
                       )}
                       {file.status === 'ocr_processing' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 animate-pulse">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-950/60 text-amber-400 border border-amber-900/40 animate-pulse">
                           Aplicando OCR...
                         </span>
                       )}
                       {file.status === 'processing' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-teal-950/60 text-teal-400 border border-teal-900/40">
                           Procesando...
                         </span>
                       )}
                       {file.status === 'completed' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-950/60 text-green-400 border border-green-900/40">
                           ✓ Completado
                         </span>
                       )}
                       {file.status === 'error' && (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-950/60 text-red-400 border border-red-900/40">
                           ✗ Error
                         </span>
                       )}
@@ -914,39 +1085,71 @@ function App() {
 
                   {file.status === 'ocr_processing' && (
                     <div className="mt-3 space-y-2">
-                      <div className="flex items-center justify-between text-xs text-gray-600">
+                      <div className="flex items-center justify-between text-xs text-stone-400">
                         <span className="flex items-center gap-2">
                           <div className="spinner-modern" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></div>
-                          <span className="font-medium">Convirtiendo PDF a texto editable (OCR)...</span>
+                          <span className="font-medium">{file.step || 'Convirtiendo PDF a texto editable (OCR)...'}</span>
                         </span>
+                        <span className="font-semibold">{file.progress || 0}%</span>
                       </div>
-                      <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                        <div className="bg-amber-500 h-1.5 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+                      <div className="w-full bg-stone-800 rounded-full h-2.5 overflow-hidden shadow-inner">
+                        <div
+                          className="bg-amber-500 h-2.5 rounded-full transition-all duration-500"
+                          style={{ width: `${file.progress || 0}%` }}
+                        ></div>
                       </div>
                     </div>
                   )}
 
                   {file.status === 'processing' && (
                     <div className="mt-3 space-y-2">
-                      <div className="flex items-center justify-between text-xs text-gray-600">
+                      <div className="flex items-center justify-between text-xs text-stone-400">
                         <span className="flex items-center gap-2">
                           <div className="spinner-modern" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></div>
                           <span className="font-medium flex items-center gap-1">
-                            {processingStep || 'Procesando documento'}
-                            <span className="dots-pulse text-teal-600">
+                            {file.step || processingStep || 'Procesando documento'}
+                            <span className="dots-pulse text-teal-400">
                               <span></span>
                               <span></span>
                               <span></span>
                             </span>
                           </span>
                         </span>
-                        <span className="font-semibold">{file.progress}%</span>
+                        <span className="font-semibold">{file.progress || 0}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden shadow-inner">
+                      <div className="w-full bg-stone-800 rounded-full h-2.5 overflow-hidden shadow-inner">
                         <div
                           className="bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-500 h-2.5 rounded-full transition-all duration-500 progress-wave"
                           style={{
-                            width: `${file.progress || 50}%`,
+                            width: `${file.progress || 0}%`,
+                            backgroundSize: '200% 100%'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {file.pdfType === 'detecting' && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-stone-400">
+                        <span className="flex items-center gap-2">
+                          <div className="spinner-modern" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></div>
+                          <span className="font-medium flex items-center gap-1">
+                            {file.step || 'Analizando tipo de PDF...'}
+                            <span className="dots-pulse text-teal-400">
+                              <span></span>
+                              <span></span>
+                              <span></span>
+                            </span>
+                          </span>
+                        </span>
+                        <span className="font-semibold">{file.progress || 0}%</span>
+                      </div>
+                      <div className="w-full bg-stone-800 rounded-full h-2.5 overflow-hidden shadow-inner">
+                        <div
+                          className="bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-500 h-2.5 rounded-full transition-all duration-500 progress-wave"
+                          style={{
+                            width: `${file.progress || 0}%`,
                             backgroundSize: '200% 100%'
                           }}
                         />
@@ -955,9 +1158,9 @@ function App() {
                   )}
 
                   {file.result && file.status === 'completed' && (
-                    <div className="mt-3 pt-3 border-t border-gray-100">
-                      <p className="text-xs text-gray-600 mb-2">Datos redactados:</p>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="mt-3 pt-3 border-t border-stone-850">
+                      <p className="text-xs text-stone-400 mb-2">Datos redactados:</p>
+                      <div className="grid grid-cols-3 gap-2 text-xs text-stone-300">
                         <div>
                           <span className="font-medium">{file.result.stats.dniCount}</span> DNI/NIE
                         </div>
@@ -980,7 +1183,7 @@ function App() {
                           <span className="font-medium">{file.result.stats.qrCount}</span> QR Codes
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">
+                      <p className="text-xs text-stone-500 mt-2">
                         Guardado en: {file.result.outputFile}
                       </p>
                     </div>
@@ -991,7 +1194,7 @@ function App() {
                       <button
                         onClick={() => handleStartReview(idx)}
                         disabled={isDetecting === idx || file.pdfType === 'detecting'}
-                        className="px-3 py-1.5 bg-teal-600 text-white text-xs rounded hover:bg-teal-700 scale-on-hover disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100 transition-all duration-200 shadow-md hover:shadow-lg"
+                        className="px-3 py-1.5 bg-teal-600 text-white text-xs rounded hover:bg-teal-500 scale-on-hover disabled:bg-stone-800 disabled:text-stone-500 disabled:cursor-not-allowed disabled:scale-100 transition-all duration-200 shadow-md hover:shadow-lg border border-teal-500/20 disabled:border-stone-800"
                       >
                         {isDetecting === idx ? (
                           <span className="flex items-center justify-center gap-2">
@@ -1011,6 +1214,34 @@ function App() {
                       </button>
                     </div>
                   )}
+
+                  {isDetecting === idx && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-stone-400">
+                        <span className="flex items-center gap-2">
+                          <div className="spinner-modern" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></div>
+                          <span className="font-medium flex items-center gap-1">
+                            {file.step || 'Detectando PII'}
+                            <span className="dots-pulse text-teal-400">
+                              <span></span>
+                              <span></span>
+                              <span></span>
+                            </span>
+                          </span>
+                        </span>
+                        <span className="font-semibold">{file.progress || 0}%</span>
+                      </div>
+                      <div className="w-full bg-stone-800 rounded-full h-2.5 overflow-hidden shadow-inner">
+                        <div
+                          className="bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-500 h-2.5 rounded-full transition-all duration-500 progress-wave"
+                          style={{
+                            width: `${file.progress || 0}%`,
+                            backgroundSize: '200% 100%'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1019,37 +1250,37 @@ function App() {
 
         {/* Results Summary */}
         {processResult && (
-          <div className="mt-8 glass rounded-2xl shadow-xl p-6 border border-gray-200/50">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
+          <div className="mt-8 glass rounded-2xl shadow-xl p-6 border border-stone-800/60">
+            <h2 className="text-xl font-semibold text-stone-200 mb-4">
               Resumen del Procesamiento
             </h2>
             <div className="grid grid-cols-2 gap-4">
-              <div className="text-center p-6 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl shadow-md border border-green-200">
-                <p className="text-4xl font-bold text-green-600 mb-1">
+              <div className="text-center p-6 bg-gradient-to-br from-green-950/20 to-emerald-950/20 rounded-xl shadow-md border border-green-900/40">
+                <p className="text-4xl font-bold text-green-400 mb-1">
                   {processResult.results.filter((r) => r.status === 'success').length}
                 </p>
-                <p className="text-sm text-gray-600 font-medium">Archivos exitosos</p>
+                <p className="text-sm text-stone-400 font-medium">Archivos exitosos</p>
               </div>
-              <div className="text-center p-6 bg-gradient-to-br from-red-50 to-rose-50 rounded-xl shadow-md border border-red-200">
-                <p className="text-4xl font-bold text-red-600 mb-1">
+              <div className="text-center p-6 bg-gradient-to-br from-red-950/20 to-rose-950/20 rounded-xl shadow-md border border-red-900/40">
+                <p className="text-4xl font-bold text-red-400 mb-1">
                   {processResult.results.filter((r) => r.status === 'error').length}
                 </p>
-                <p className="text-sm text-gray-600 font-medium">Archivos con error</p>
+                <p className="text-sm text-stone-400 font-medium">Archivos con error</p>
               </div>
             </div>
           </div>
         )}
 
         {/* Footer */}
-        <footer className="mt-12 text-center text-sm text-gray-500">
+        <footer className="mt-12 text-center text-sm text-stone-500">
           <p>
             Procesamiento 100% local - Sin telemetría - Conforme a RGPD
           </p>
-          <p className="mt-2 text-xs">
+          <p className="mt-2 text-xs text-stone-500">
             v{__APP_VERSION__} · by{' '}
             <button
               onClick={() => anonidata.utils.openExternal('https://x.com/TbanR')}
-              className="text-teal-600 hover:text-teal-700 hover:underline transition-colors cursor-pointer"
+              className="text-teal-400 hover:text-teal-300 hover:underline transition-colors cursor-pointer"
             >
               @TbanR
             </button>
@@ -1060,17 +1291,26 @@ function App() {
       {/* Modal de Completación */}
       {showCompletionModal && completionData && (
         <div className="modal-backdrop backdrop-blur-strong p-4">
-          <div className="modal-content glass rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border-2 border-white/20">
+          <div className="modal-content glass rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border-2 border-stone-800/80">
             {/* Header */}
-            <div className={`p-8 rounded-t-2xl ${completionData.type === 'success' ? 'bg-gradient-to-r from-green-500 to-green-600' :
-              completionData.type === 'partial' ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
-                'bg-gradient-to-r from-red-500 to-red-600'
-              }`}>
+            <div className={`p-8 rounded-t-2xl ${
+              (completionData.type === 'success' && completionData.warnings && completionData.warnings.length > 0)
+                ? 'bg-gradient-to-r from-amber-600 to-orange-600'
+                : completionData.type === 'success'
+                ? 'bg-gradient-to-r from-green-600 to-green-700'
+                : completionData.type === 'partial'
+                ? 'bg-gradient-to-r from-amber-600 to-orange-600'
+                : 'bg-gradient-to-r from-red-600 to-rose-700'
+            }`}>
               <div className="flex items-center justify-between text-white">
                 <h2 className="text-3xl font-bold">
-                  {completionData.type === 'success' && 'Proceso Completado'}
-                  {completionData.type === 'partial' && 'Completado con Errores'}
-                  {(completionData.type === 'error' || completionData.type === 'critical') && 'Error en el Procesamiento'}
+                  {completionData.type === 'success' && completionData.warnings && completionData.warnings.length > 0
+                    ? 'Completado con Advertencias'
+                    : completionData.type === 'success'
+                    ? 'Proceso Completado'
+                    : completionData.type === 'partial'
+                    ? 'Completado con Errores'
+                    : 'Error en el Procesamiento'}
                 </h2>
               </div>
             </div>
@@ -1079,36 +1319,36 @@ function App() {
             <div className="p-8">
               {/* Estadísticas */}
               <div className="grid grid-cols-3 gap-4 mb-8">
-                <div className="text-center p-6 bg-gray-50 rounded-xl">
-                  <div className="text-4xl font-bold text-gray-800 mb-2">
+                <div className="text-center p-6 bg-stone-900/50 border border-stone-850 rounded-xl">
+                  <div className="text-4xl font-bold text-stone-100 mb-2">
                     {completionData.totalFiles}
                   </div>
-                  <div className="text-sm text-gray-600">Total de archivos</div>
+                  <div className="text-sm text-stone-400">Total de archivos</div>
                 </div>
-                <div className="text-center p-6 bg-green-50 rounded-xl">
-                  <div className="text-4xl font-bold text-green-600 mb-2">
+                <div className="text-center p-6 bg-green-950/20 border border-green-900/30 rounded-xl">
+                  <div className="text-4xl font-bold text-green-400 mb-2">
                     {completionData.successCount}
                   </div>
-                  <div className="text-sm text-gray-600">Procesados</div>
+                  <div className="text-sm text-stone-400">Procesados</div>
                 </div>
-                <div className="text-center p-6 bg-gray-50 rounded-xl">
-                  <div className="text-4xl font-bold text-gray-800 mb-2">
+                <div className="text-center p-6 bg-stone-900/50 border border-stone-850 rounded-xl">
+                  <div className="text-4xl font-bold text-stone-100 mb-2">
                     {completionData.processingTime}s
                   </div>
-                  <div className="text-sm text-gray-600">Tiempo total</div>
+                  <div className="text-sm text-stone-400">Tiempo total</div>
                 </div>
               </div>
 
               {/* Mensaje de Éxito */}
               {completionData.type === 'success' && (
-                <div className="bg-teal-50 border-l-4 border-teal-500 p-6 rounded-lg mb-6">
-                  <h3 className="text-lg font-semibold text-teal-900 mb-3">
+                <div className="bg-teal-950/20 border-l-4 border-teal-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold text-teal-400 mb-3">
                     Revisión Manual Requerida
                   </h3>
-                  <p className="text-teal-800 leading-relaxed">
+                  <p className="text-teal-300 leading-relaxed">
                     Por favor, <strong>revise manualmente</strong> los archivos anonimizados para verificar que no queden datos personales sin excluir.
                   </p>
-                  <p className="text-teal-800 leading-relaxed mt-2">
+                  <p className="text-teal-300 leading-relaxed mt-2">
                     Es fundamental verificar que toda la información sensible haya sido correctamente anonimizada.
                   </p>
                 </div>
@@ -1116,17 +1356,17 @@ function App() {
 
               {/* Lista de Advertencias */}
               {completionData.warnings && completionData.warnings.length > 0 && (
-                <div className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-lg mb-6">
-                  <h3 className="text-lg font-semibold text-amber-900 mb-4">
+                <div className="bg-amber-950/20 border-l-4 border-amber-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold text-amber-400 mb-4">
                     Advertencias ({completionData.warnings.length})
                   </h3>
                   <div className="space-y-3 max-h-60 overflow-y-auto">
                     {completionData.warnings.map((warn, idx) => (
-                      <div key={idx} className="bg-white p-4 rounded-lg shadow-sm">
-                        <div className="font-medium text-amber-900 mb-2">{warn.file}</div>
+                      <div key={idx} className="bg-stone-900 p-4 rounded-lg shadow-sm border border-stone-850">
+                        <div className="font-medium text-amber-400 mb-2">{warn.file}</div>
                         <div className="space-y-1">
                           {warn.warnings.map((warning, widx) => (
-                            <div key={widx} className="text-sm text-amber-700">{warning}</div>
+                            <div key={widx} className="text-sm text-amber-300">{warning}</div>
                           ))}
                         </div>
                       </div>
@@ -1137,15 +1377,15 @@ function App() {
 
               {/* Lista de Errores */}
               {completionData.errors && completionData.errors.length > 0 && (
-                <div className="border-l-4 p-6 rounded-lg mb-6" style={{ backgroundColor: '#fff5f3', borderColor: '#FF6B54' }}>
-                  <h3 className="text-lg font-semibold mb-4" style={{ color: '#ba3821' }}>
+                <div className="bg-red-950/20 border-l-4 border-red-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold mb-4 text-red-400">
                     Errores Encontrados ({completionData.errorCount})
                   </h3>
                   <div className="space-y-3 max-h-60 overflow-y-auto">
                     {completionData.errors.map((err, idx) => (
-                      <div key={idx} className="bg-white p-4 rounded-lg shadow-sm">
-                        <div className="font-medium mb-1" style={{ color: '#ba3821' }}>{err.file}</div>
-                        <div className="text-sm" style={{ color: '#d14932' }}>{err.error}</div>
+                      <div key={idx} className="bg-stone-900 p-4 rounded-lg shadow-sm border border-stone-850">
+                        <div className="font-medium mb-1 text-red-400">{err.file}</div>
+                        <div className="text-sm text-red-300">{err.error}</div>
                       </div>
                     ))}
                   </div>
@@ -1154,17 +1394,17 @@ function App() {
 
               {/* Mensaje Crítico */}
               {completionData.type === 'critical' && completionData.message && (
-                <div className="border-l-4 p-6 rounded-lg mb-6" style={{ backgroundColor: '#fff5f3', borderColor: '#FF6B54' }}>
-                  <h3 className="text-lg font-semibold mb-3" style={{ color: '#ba3821' }}>
+                <div className="bg-red-950/20 border-l-4 border-red-500 p-6 rounded-lg mb-6">
+                  <h3 className="text-lg font-semibold mb-3 text-red-400">
                     Error Crítico
                   </h3>
-                  <p className="leading-relaxed mb-3" style={{ color: '#d14932' }}>
+                  <p className="leading-relaxed mb-3 text-red-300">
                     Ocurrió un error inesperado durante el procesamiento:
                   </p>
-                  <code className="block p-4 rounded text-sm" style={{ backgroundColor: '#ffe8e3', color: '#ba3821' }}>
+                  <code className="block p-4 rounded text-sm bg-red-950/40 text-red-400 border border-red-900/30 font-mono">
                     {completionData.message}
                   </code>
-                  <p className="leading-relaxed mt-3" style={{ color: '#d14932' }}>
+                  <p className="leading-relaxed mt-3 text-red-300">
                     Por favor, intente nuevamente o contacte soporte técnico.
                   </p>
                 </div>
@@ -1175,7 +1415,7 @@ function App() {
             <div className="px-8 pb-8">
               <button
                 onClick={() => setShowCompletionModal(false)}
-                className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
+                className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
               >
                 Entendido
               </button>
@@ -1187,9 +1427,9 @@ function App() {
       {/* Modal About AnoniData */}
       {showAboutModal && (
         <div className="modal-backdrop backdrop-blur-strong p-4">
-          <div className="modal-content glass rounded-2xl shadow-2xl max-w-lg w-full border-2 border-white/20">
+          <div className="modal-content glass rounded-2xl shadow-2xl max-w-lg w-full border-2 border-stone-800/80">
             {/* Header */}
-            <div className="p-8 rounded-t-2xl bg-gradient-to-r from-teal-600 to-cyan-600">
+            <div className="p-8 rounded-t-2xl bg-gradient-to-r from-teal-700 to-cyan-700">
               <div className="text-white text-center">
                 <div className="flex justify-center mb-4">
                   <img
@@ -1208,23 +1448,23 @@ function App() {
               <div className="space-y-6">
                 {/* Versión */}
                 <div className="text-center">
-                  <p className="text-sm text-gray-500 mb-1">Versión</p>
-                  <p className="text-2xl font-bold text-gray-800">{__APP_VERSION__}</p>
+                  <p className="text-sm text-stone-500 mb-1">Versión</p>
+                  <p className="text-2xl font-bold text-stone-200">{__APP_VERSION__}</p>
                 </div>
 
                 {/* Fecha de compilación */}
                 <div className="text-center">
-                  <p className="text-sm text-gray-500 mb-1">Fecha de compilación</p>
-                  <p className="text-lg text-gray-700">{__BUILD_DATE__}</p>
+                  <p className="text-sm text-stone-500 mb-1">Fecha de compilación</p>
+                  <p className="text-lg text-stone-300">{__BUILD_DATE__}</p>
                 </div>
 
                 {/* Contacto */}
-                <div className="pt-6 border-t border-gray-200">
+                <div className="pt-6 border-t border-stone-800">
                   <div className="text-center">
-                    <p className="text-sm text-gray-500 mb-3">Contacto</p>
+                    <p className="text-sm text-stone-500 mb-3">Contacto</p>
                     <button
                       onClick={() => anonidata.utils.openExternal('https://x.com/TbanR')}
-                      className="inline-flex items-center gap-2 text-teal-600 hover:text-teal-700 font-medium transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-2 text-teal-400 hover:text-teal-300 font-medium transition-colors cursor-pointer"
                     >
                       <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -1235,22 +1475,22 @@ function App() {
                 </div>
 
                 {/* Características */}
-                <div className="pt-6 border-t border-gray-200">
-                  <div className="grid grid-cols-1 gap-3 text-sm text-gray-600">
+                <div className="pt-6 border-t border-stone-800">
+                  <div className="grid grid-cols-1 gap-3 text-sm text-stone-400">
                     <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
+                      <span className="text-emerald-400">✓</span>
                       <span>Procesamiento 100% local</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
+                      <span className="text-emerald-400">✓</span>
                       <span>Sin telemetría ni conexión a internet</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
+                      <span className="text-emerald-400">✓</span>
                       <span>Conforme al Reglamento General de Protección de Datos (RGPD)</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
+                      <span className="text-emerald-400">✓</span>
                       <span>Detección avanzada con IA (spaCy NER)</span>
                     </div>
                   </div>
@@ -1262,7 +1502,7 @@ function App() {
             <div className="px-8 pb-8">
               <button
                 onClick={() => setShowAboutModal(false)}
-                className="w-full bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-semibold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
+                className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg transition-all transform hover:scale-[1.02]"
               >
                 Cerrar
               </button>
@@ -1277,37 +1517,55 @@ function App() {
         const currentOcrPromptFileName = currentOcrPromptFile.split('/').pop() || currentOcrPromptFile;
         return (
           <div className="modal-backdrop backdrop-blur-strong p-4">
-            <div className="modal-content glass rounded-2xl shadow-2xl max-w-md w-full border-2 border-white/20 p-6">
+            <div className="modal-content glass rounded-2xl shadow-2xl max-w-md w-full border-2 border-stone-800/80 p-6">
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <div className="w-16 h-16 bg-amber-950/40 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
                   <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Reconocimiento de Texto (OCR)</h3>
-                <p className="text-sm text-gray-600">
-                  El archivo <strong className="text-gray-800 break-all">"{currentOcrPromptFileName}"</strong> ha sido identificado como una imagen o escaneo (no contiene texto seleccionable).
+                <h3 className="text-xl font-bold text-stone-100 mb-2">Reconocimiento de Texto (OCR)</h3>
+                <p className="text-sm text-stone-400">
+                  El archivo <strong className="text-stone-200 break-all">"{currentOcrPromptFileName}"</strong> ha sido identificado como una imagen o escaneo (no contiene texto seleccionable).
                 </p>
               </div>
               
-              <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-4 mb-6">
-                <p className="text-xs text-amber-800 leading-relaxed">
+              <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-4 mb-6">
+                <p className="text-xs text-amber-400 leading-relaxed">
                   Para poder buscar y ocultar datos personales (PII) automáticamente en este documento, es necesario aplicar OCR. Si decides no aplicarlo, solo se detectarán firmas u otros elementos visuales si los hay, y deberás revisarlo manualmente de forma detallada.
                 </p>
               </div>
 
               <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => handleOcrDecision(currentOcrPromptFile, 'yes')}
+                    className="py-3 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white font-semibold rounded-xl shadow-md transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-sm"
+                  >
+                    <span>🔍</span> Sí, a este
+                  </button>
+                  <button
+                    onClick={() => handleOcrDecision(currentOcrPromptFile, 'no')}
+                    className="py-3 bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold rounded-xl transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer border border-stone-700/50 text-sm"
+                  >
+                    <span>❌</span> No, omitir
+                  </button>
+                </div>
+                
+                <div className="border-t border-stone-800/80 my-1"></div>
+                
                 <button
-                  onClick={() => handleOcrDecision(currentOcrPromptFile, 'yes')}
-                  className="w-full py-3 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-semibold rounded-xl shadow-md transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={() => handleOcrDecision(currentOcrPromptFile, 'yes_all')}
+                  className="w-full py-3 bg-teal-950/40 hover:bg-teal-900/40 text-teal-400 font-semibold rounded-xl border border-teal-800/60 transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-sm"
                 >
-                  <span>🔍</span> Sí, aplicar OCR y procesar
+                  <span>⏩</span> Sí a todos los restantes
                 </button>
+                
                 <button
-                  onClick={() => handleOcrDecision(currentOcrPromptFile, 'no')}
-                  className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={() => handleOcrDecision(currentOcrPromptFile, 'no_all')}
+                  className="w-full py-3 bg-stone-900 hover:bg-stone-850 text-stone-400 font-semibold rounded-xl border border-stone-800/60 transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-sm"
                 >
-                  <span>❌</span> No, omitir OCR
+                  <span>⏭️</span> No a todos los restantes
                 </button>
               </div>
             </div>
