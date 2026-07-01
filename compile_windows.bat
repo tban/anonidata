@@ -35,6 +35,10 @@ if defined VS_INSTALL_DIR (
         exit /b 1
     ) else (
         echo [OK] link.exe esta listo y configurado.
+        rem Forzar a Cargo y Rust a usar el enlazador del PATH (necesario en maquinas ARM64)
+        set CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=link.exe
+        set CC_x86_64_pc_windows_msvc=cl.exe
+        set CXX_x86_64_pc_windows_msvc=cl.exe
     )
 ) else (
     echo [ERROR CRITICO] No se encontro Visual Studio con el componente "MSVC v143 - VS 2022 C++ x64/x86 build tools".
