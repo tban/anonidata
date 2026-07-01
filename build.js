@@ -105,32 +105,34 @@ function runWorkflow() {
         // Eliminamos el borrado explícito (fs.unlinkSync) para que Google Drive detecte 
         // una nueva versión del mismo archivo en lugar de un archivo nuevo con un ID distinto.
 
-        // 5. DESPLIEGUE INTERNO
+        // 5. TRASLADO DEL INSTALADOR FINAL
         console.log('\n5. Trasladando los nuevos binarios a la carpeta de despliegue principal...');
-        const macDmgDir = path.join(PROJECT_ROOT, 'src-tauri', 'target', 'universal-apple-darwin', 'release', 'bundle', 'dmg');
-        const winNsisDir = path.join(PROJECT_ROOT, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
-        
+        const possiblePaths = process.platform === 'darwin'
+            ? [
+                path.join(__dirname, 'src-tauri', 'target', 'universal-apple-darwin', 'release', 'bundle', 'dmg'),
+                path.join(__dirname, 'src-tauri', 'target', 'release', 'bundle', 'dmg')
+            ]
+            : [
+                path.join(__dirname, 'src-tauri', 'target', 'x86_64-pc-windows-msvc', 'release', 'bundle', 'nsis'),
+                path.join(__dirname, 'src-tauri', 'target', 'release', 'bundle', 'nsis')
+            ];
+
         let targetFiles = [];
         let sourceDir = '';
         
-        if (fs.existsSync(macDmgDir)) {
-            const files = fs.readdirSync(macDmgDir).filter(f => f.endsWith('.dmg'));
-            if (files.length > 0) {
-                targetFiles = files;
-                sourceDir = macDmgDir;
-            }
-        }
-        
-        if (targetFiles.length === 0 && fs.existsSync(winNsisDir)) {
-            const files = fs.readdirSync(winNsisDir).filter(f => f.endsWith('.exe'));
-            if (files.length > 0) {
-                targetFiles = files;
-                sourceDir = winNsisDir;
+        for (const p of possiblePaths) {
+            if (fs.existsSync(p)) {
+                const files = fs.readdirSync(p).filter(f => f.endsWith('.dmg') || f.endsWith('.exe'));
+                if (files.length > 0) {
+                    targetFiles = files;
+                    sourceDir = p;
+                    break;
+                }
             }
         }
 
         if (targetFiles.length === 0) {
-            throw new Error(`CRÍTICA: No se encontró ningún archivo .exe o .dmg generado en las carpetas de Tauri: \n - ${macDmgDir}\n - ${winNsisDir}`);
+            throw new Error(`CRÍTICA: No se encontró ningún archivo .exe o .dmg generado en las siguientes carpetas:\n` + possiblePaths.map(p => ` - ${p}`).join('\n'));
         }
 
         const generatedInstallers = [];
