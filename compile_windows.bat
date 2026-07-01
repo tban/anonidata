@@ -30,11 +30,6 @@ if defined VS_INSTALL_DIR (
     
     rem Creamos un script temporal para lanzar el entorno y luego volver a llamarnos
     echo call "!VS_INSTALL_DIR!\VC\Auxiliary\Build\vcvarsall.bat" arm64_x64 ^>nul > "%TEMP%\run_env.bat"
-    echo echo [DIAGNOSTICO] Comprobando enlazador disponible: >> "%TEMP%\run_env.bat"
-    echo where link.exe >> "%TEMP%\run_env.bat"
-    echo echo. >> "%TEMP%\run_env.bat"
-    echo echo SI ARRIBA DICE "INFO: Could not find files" O EL DIRECTORIO DE GIT, ESTA ES LA CAUSA DEL ERROR. >> "%TEMP%\run_env.bat"
-    echo pause >> "%TEMP%\run_env.bat"
     echo call "%~dp0compile_windows.bat" --env-loaded >> "%TEMP%\run_env.bat"
     
     rem Ejecutamos el script temporal
@@ -52,6 +47,13 @@ echo ==================================================
 echo   ENTORNO CARGADO - CONTINUANDO COMPILACION
 echo ==================================================
 echo.
+
+if defined VCToolsInstallDir (
+    set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=!VCToolsInstallDir!bin\HostARM64\x64\link.exe"
+    if not exist "!CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER!" set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=!VCToolsInstallDir!bin\Hostx64\x64\link.exe"
+    echo Forzando Rust a usar el enlazador MSVC en: !CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER!
+)
+
 echo 2. Instalando dependencias de Node...
 call npm install
 if %errorlevel% neq 0 exit /b %errorlevel%
