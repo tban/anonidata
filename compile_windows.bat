@@ -55,8 +55,8 @@ if defined VCToolsInstallDir (
     set "CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER=!VCToolsInstallDir!bin\HostARM64\ARM64\link.exe"
     if not exist "!CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER!" set "CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER=!VCToolsInstallDir!bin\Hostx64\ARM64\link.exe"
     
-    echo Forzando Rust a usar el enlazador MSVC (Target x64): !CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER!
-    echo Forzando Rust a usar el enlazador MSVC (Host ARM64): !CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER!
+    echo Forzando Rust a usar el enlazador MSVC [Target x64]: !CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER!
+    echo Forzando Rust a usar el enlazador MSVC [Host ARM64]: !CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER!
 )
 
 echo 2. Instalando dependencias de Node...
