@@ -23,7 +23,7 @@ if exist %VSWHERE% (
 
 if defined VS_INSTALL_DIR (
     echo [OK] Visual Studio encontrado en: !VS_INSTALL_DIR!
-    echo Cargando entorno de variables C++... intentando arm64_x64 (nativo en ARM)...
+    echo Cargando entorno de variables C++ intentando arm64_x64 nativo en ARM ...
     call "!VS_INSTALL_DIR!\VC\Auxiliary\Build\vcvarsall.bat" arm64_x64 >nul 2>nul
     
     if not defined VCToolsInstallDir (
@@ -34,7 +34,7 @@ if defined VS_INSTALL_DIR (
     if defined VCToolsInstallDir (
         echo [OK] Entorno MSVC cargado. VCToolsInstallDir: !VCToolsInstallDir!
         
-        rem Buscar el path absoluto de link.exe real (MSVC) ignorando el de Git
+        rem Buscar el path absoluto de link.exe real ignorando el de Git
         set REAL_LINK_EXE=
         if exist "!VCToolsInstallDir!bin\Hostarm64\x64\link.exe" set REAL_LINK_EXE=!VCToolsInstallDir!bin\Hostarm64\x64\link.exe
         if exist "!VCToolsInstallDir!bin\Hostx64\x64\link.exe" set REAL_LINK_EXE=!VCToolsInstallDir!bin\Hostx64\x64\link.exe
@@ -45,7 +45,7 @@ if defined VS_INSTALL_DIR (
             set CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=!REAL_LINK_EXE!
         ) else (
             echo [ERROR CRITICO] No se encontro link.exe dentro de VCToolsInstallDir.
-            echo Asegurate de haber instalado "Herramientas de compilacion de MSVC v143 - VS 2022 C++ x64/x86".
+            echo Asegurate de haber instalado Herramientas de compilacion de MSVC v143.
             pause
             exit /b 1
         )
