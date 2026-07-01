@@ -23,22 +23,36 @@ if exist %VSWHERE% (
 
 if defined VS_INSTALL_DIR (
     echo [OK] Visual Studio encontrado en: !VS_INSTALL_DIR!
-    echo Cargando entorno de variables C++ para x64...
-    call "!VS_INSTALL_DIR!\VC\Auxiliary\Build\vcvarsall.bat" x64
+    echo Cargando entorno de variables C++... intentando arm64_x64 (nativo en ARM)...
+    call "!VS_INSTALL_DIR!\VC\Auxiliary\Build\vcvarsall.bat" arm64_x64 >nul 2>nul
     
-    echo Verificando si link.exe esta disponible ahora...
-    where link.exe >nul 2>nul
-    if !errorlevel! neq 0 (
-        echo [ERROR CRITICO] vcvarsall.bat se ejecuto, pero link.exe no esta en el PATH.
-        echo Esto significa que el componente de compilacion cruzada para x64 no esta instalado correctamente.
+    if not defined VCToolsInstallDir (
+        echo Intentando cargar entorno x64 por emulacion...
+        call "!VS_INSTALL_DIR!\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>nul
+    )
+
+    if defined VCToolsInstallDir (
+        echo [OK] Entorno MSVC cargado. VCToolsInstallDir: !VCToolsInstallDir!
+        
+        rem Buscar el path absoluto de link.exe real (MSVC) ignorando el de Git
+        set REAL_LINK_EXE=
+        if exist "!VCToolsInstallDir!bin\Hostarm64\x64\link.exe" set REAL_LINK_EXE=!VCToolsInstallDir!bin\Hostarm64\x64\link.exe
+        if exist "!VCToolsInstallDir!bin\Hostx64\x64\link.exe" set REAL_LINK_EXE=!VCToolsInstallDir!bin\Hostx64\x64\link.exe
+        if exist "!VCToolsInstallDir!bin\Hostx86\x64\link.exe" set REAL_LINK_EXE=!VCToolsInstallDir!bin\Hostx86\x64\link.exe
+        
+        if defined REAL_LINK_EXE (
+            echo [OK] Enlazador MSVC encontrado en: !REAL_LINK_EXE!
+            set CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=!REAL_LINK_EXE!
+        ) else (
+            echo [ERROR CRITICO] No se encontro link.exe dentro de VCToolsInstallDir.
+            echo Asegurate de haber instalado "Herramientas de compilacion de MSVC v143 - VS 2022 C++ x64/x86".
+            pause
+            exit /b 1
+        )
+    ) else (
+        echo [ERROR CRITICO] Fallo al ejecutar vcvarsall.bat. No se instalaron las herramientas x64 cruzadas.
         pause
         exit /b 1
-    ) else (
-        echo [OK] link.exe esta listo y configurado.
-        rem Forzar a Cargo y Rust a usar el enlazador del PATH (necesario en maquinas ARM64)
-        set CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=link.exe
-        set CC_x86_64_pc_windows_msvc=cl.exe
-        set CXX_x86_64_pc_windows_msvc=cl.exe
     )
 ) else (
     echo [ERROR CRITICO] No se encontro Visual Studio con el componente "MSVC v143 - VS 2022 C++ x64/x86 build tools".
