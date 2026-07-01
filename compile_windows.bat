@@ -9,8 +9,15 @@ echo.
 echo 1. Buscando compilador C++ (MSVC) para x64...
 set VSWHERE="%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if exist %VSWHERE% (
-    for /f "usebackq tokens=*" %%i in (`%VSWHERE% -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+    for /f "usebackq tokens=*" %%i in (`%VSWHERE% -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
         set VS_INSTALL_DIR=%%i
+    )
+    
+    if not defined VS_INSTALL_DIR (
+        rem Intento alternativo sin requerir el componente especifico
+        for /f "usebackq tokens=*" %%i in (`%VSWHERE% -latest -products * -property installationPath`) do (
+            set VS_INSTALL_DIR=%%i
+        )
     )
 )
 
