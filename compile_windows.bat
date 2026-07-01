@@ -29,7 +29,9 @@ if defined VS_INSTALL_DIR (
     echo ==================================================
     
     rem Creamos un script temporal para lanzar el entorno y luego volver a llamarnos
-    echo call "!VS_INSTALL_DIR!\VC\Auxiliary\Build\vcvarsall.bat" x64 > "%TEMP%\run_env.bat"
+    echo call "!VS_INSTALL_DIR!\VC\Auxiliary\Build\vcvarsall.bat" arm64_x64 ^>nul > "%TEMP%\run_env.bat"
+    echo echo [DIAGNOSTICO] Comprobando enlazador disponible: >> "%TEMP%\run_env.bat"
+    echo where link.exe >> "%TEMP%\run_env.bat"
     echo call "%~dp0compile_windows.bat" --env-loaded >> "%TEMP%\run_env.bat"
     
     rem Ejecutamos el script temporal
