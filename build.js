@@ -94,7 +94,9 @@ function runWorkflow() {
         }
 
         console.log('   [Ejecutando npm run build...]');
-        const buildCmd = process.platform === 'darwin' ? 'npm run build -- --target universal-apple-darwin' : 'npm run build';
+        const buildCmd = process.platform === 'darwin' 
+            ? 'npm run build -- --target universal-apple-darwin' 
+            : 'npm run build -- --target x86_64-pc-windows-msvc';
         execSync(buildCmd, { stdio: 'inherit' });
         console.log('   -> Compilación técnica finalizada.');
 
