@@ -9,7 +9,7 @@ const PROJECT_ROOT = process.cwd();
 // Directorio final donde se guardarán los instaladores listos (puedes inyectar Variables de Entorno en tu CI/CD)
 let defaultDestDir = '/Users/tban/Library/CloudStorage/GoogleDrive-tbanrguez@gmail.com/Mi unidad/PUBLICAPPS/ANONIDATA';
 if (process.platform === 'win32') {
-    defaultDestDir = path.join(process.env.USERPROFILE || 'C:\\', 'Desktop', 'Anonidata_Release');
+    defaultDestDir = path.join(__dirname, 'dist', 'windows');
 }
 const FINAL_DEST_DIR = process.env.FINAL_DEST_DIR || defaultDestDir;
 // Directorio temporal interno donde electron-builder arroja los .exe
