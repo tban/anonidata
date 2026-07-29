@@ -65,6 +65,12 @@ class PDFParser:
         doc = fitz.open(file_path)
 
         try:
+            # Aplanar campos de formulario interactivos por defecto para asegurar su correcta extracción y redacción
+            if hasattr(doc, "bake"):
+                doc.bake(annots=False, widgets=True)
+            else:
+                logger.warning("El método 'bake' no está disponible en esta versión de PyMuPDF.")
+
             # Extraer metadatos
             metadata = self._extract_metadata(doc)
 

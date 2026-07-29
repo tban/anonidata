@@ -1,7 +1,7 @@
 {
   "name": "anonidata",
   "productName": "Anonidata",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Aplicación de escritorio para anonimización de PDFs conforme a RGPD",
   "author": "AnoniData",
   "license": "MIT",
@@ -21,7 +21,9 @@
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "tauri": "tauri",
-    "release": "node build.js"
+    "release": "node build.js",
+    "sync:windows": "./scripts/sync-to-windows.sh",
+    "publish:windows": "./scripts/publish-windows.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",

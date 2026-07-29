@@ -63,6 +63,12 @@ class Anonymizer:
         doc = fitz.open(input_path)
 
         try:
+            # Aplanar campos de formulario interactivos por defecto para evitar que se superpongan a las redacciones
+            if hasattr(doc, "bake"):
+                doc.bake(annots=False, widgets=True)
+            else:
+                logger.warning("El método 'bake' no está disponible en esta versión de PyMuPDF.")
+
             # Agrupar matches por página
             matches_by_page = self._group_by_page(pii_matches)
 
@@ -437,6 +443,12 @@ class Anonymizer:
         doc = fitz.open(input_path)
 
         try:
+            # Aplanar campos de formulario interactivos en el documento de vista previa
+            if hasattr(doc, "bake"):
+                doc.bake(annots=False, widgets=True)
+            else:
+                logger.warning("El método 'bake' no está disponible en esta versión de PyMuPDF.")
+
             # NO agregar anotaciones visuales al PDF
             # El frontend se encarga de mostrar rectángulos interactivos con SVG overlay
 
@@ -485,6 +497,12 @@ class Anonymizer:
         doc = fitz.open(input_path)
 
         try:
+            # Aplanar campos de formulario interactivos para que las redacciones se apliquen sobre texto estático
+            if hasattr(doc, "bake"):
+                doc.bake(annots=False, widgets=True)
+            else:
+                logger.warning("El método 'bake' no está disponible en esta versión de PyMuPDF.")
+
             # Agrupar detecciones aprobadas por página
             matches_by_page = self._group_by_page(approved_detections)
 

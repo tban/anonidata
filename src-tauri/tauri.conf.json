@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AnoniData",
-  "version": "1.0.3",
-  "identifier": "com.anonidata.app",
+  "version": "1.0.4",
+  "identifier": "com.anonidata.desktop",
   "build": {
     "beforeDevCommand": "npm run dev:renderer",
     "devUrl": "http://localhost:3000",
