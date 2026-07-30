@@ -303,6 +303,12 @@ class Anonymizer:
         # Marcar todas las regiones para redacción
         for i, match in enumerate(matches, 1):
             bbox = match.bbox
+
+            # Ajustar la caja ligeramente para evitar recortar letras de palabras adyacentes
+            x0, y0, x1, y1 = bbox
+            if x1 - x0 > 4:
+                bbox = (x0 + 1.5, y0, x1 - 1.5, y1)
+
             logger.debug(f"  [{i}/{len(matches)}] {match.type}: '{match.text}' | bbox: {bbox}")
 
             if self.settings.redaction_strategy == "black_box":
