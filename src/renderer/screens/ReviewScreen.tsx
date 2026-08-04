@@ -355,7 +355,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
               onChange={(e) => setLocalStrategy(e.target.value as 'black_box' | 'text_label')}
               className="bg-stone-950 text-stone-200 border border-stone-850 rounded-lg px-2 py-1.5 text-xs focus:border-teal-500 outline-none cursor-pointer"
             >
-              <option value="black_box">Tachón negro</option>
+              <option value="black_box">Tachón gris</option>
               <option value="text_label">Texto [ANONIMIZADO]</option>
             </select>
           </div>

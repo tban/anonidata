@@ -1038,7 +1038,7 @@ function App() {
                 onChange={(e) => setRedactionStrategy(e.target.value as 'black_box' | 'text_label')}
                 className="bg-stone-950 text-stone-200 border border-stone-800 rounded-lg px-3 py-2 text-xs focus:border-teal-500 outline-none cursor-pointer"
               >
-                <option value="black_box">Tachón negro (Caja de relleno)</option>
+                <option value="black_box">Tachón gris (Caja de relleno)</option>
                 <option value="text_label">Texto [ANONIMIZADO]</option>
               </select>
             </div>
