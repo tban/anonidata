@@ -23,9 +23,9 @@ const PACKAGE_JSON_PATH = path.join(PROJECT_ROOT, 'package.json');
 // DESCARGAS DE GOOGLE DRIVE (CONFIGURACIÓN)
 // ==========================================
 const DRIVE_URLS = {
-    dmg: 'https://drive.google.com/open?id=12rbNznz9t2wol6HabmirJ6X48BuXMNpa&usp=drive_fs',
-    exe: 'https://drive.google.com/open?id=1aE8XuzonmI9Bi50Th7vk9FawOHkthf_4&usp=drive_fs',
-    version_json: 'https://drive.google.com/open?id=11wml7BF4ZO17coEiimKNJk_tfIMAvWDq&usp=drive_fs'
+    dmg: 'https://drive.google.com/uc?export=download&id=12rbNznz9t2wol6HabmirJ6X48BuXMNpa',
+    exe: 'https://drive.google.com/uc?export=download&id=18FS-8OIBIHfzJ0sRe-bJuHpb05UbOITJ',
+    version_json: 'https://drive.google.com/uc?export=download&id=11wml7BF4ZO17coEiimKNJk_tfIMAvWDq'
 };
 
 function runWorkflow() {
@@ -122,7 +122,10 @@ function runWorkflow() {
         
         for (const p of possiblePaths) {
             if (fs.existsSync(p)) {
-                const files = fs.readdirSync(p).filter(f => f.endsWith('.dmg') || f.endsWith('.exe'));
+                const files = fs.readdirSync(p).filter(f => {
+                    const isTargetExt = f.endsWith('.dmg') || f.endsWith('.exe');
+                    return isTargetExt && f.includes(appVersion);
+                });
                 if (files.length > 0) {
                     targetFiles = files;
                     sourceDir = p;
@@ -140,7 +143,7 @@ function runWorkflow() {
             const oldPath = path.join(sourceDir, fileName);
 
             // Nombre fijo para el ejecutable o dmg
-            let finalName = fileName.endsWith('.dmg') ? 'Anonidata.dmg' : 'Anonidata.exe';
+            let finalName = fileName.endsWith('.dmg') ? 'Anonidata.dmg' : 'anonidata.exe';
 
             const newPath = path.join(FINAL_DEST_DIR, finalName);
 
@@ -161,6 +164,33 @@ function runWorkflow() {
             }
         });
 
+        // Leer metadata existente para conservar valores de la otra plataforma
+        let existingMetadata = null;
+        if (fs.existsSync(VERSION_EXTERNAL_FILE)) {
+            try {
+                existingMetadata = JSON.parse(fs.readFileSync(VERSION_EXTERNAL_FILE, 'utf-8'));
+            } catch (err) {
+                console.warn('   [!] Error leyendo version.json anterior:', err.message);
+            }
+        }
+
+        const isMac = process.platform === 'darwin';
+        const otherPlatform = isMac ? 'windows' : 'mac';
+
+        let otherPlatformMetadata = {};
+        if (existingMetadata && existingMetadata.platforms && existingMetadata.platforms[otherPlatform]) {
+            otherPlatformMetadata = {
+                version: existingMetadata.platforms[otherPlatform].version,
+                build: existingMetadata.platforms[otherPlatform].build
+            };
+        } else if (existingMetadata) {
+            // Fallback si no existía metadata específica por plataforma
+            otherPlatformMetadata = {
+                version: existingMetadata.version,
+                build: existingMetadata.build
+            };
+        }
+
         const newMetadata = {
             productName: productName,
             version: appVersion,
@@ -169,11 +199,15 @@ function runWorkflow() {
             platforms: {
                 "mac": {
                     "filename": "Anonidata.dmg",
-                    "url": DRIVE_URLS.dmg
+                    "url": DRIVE_URLS.dmg,
+                    "version": isMac ? appVersion : (otherPlatformMetadata.version || appVersion),
+                    "build": isMac ? nextBuild : (otherPlatformMetadata.build || currentBuild)
                 },
                 "windows": {
-                    "filename": "Anonidata.exe",
-                    "url": DRIVE_URLS.exe
+                    "filename": "anonidata.exe",
+                    "url": DRIVE_URLS.exe,
+                    "version": !isMac ? appVersion : (otherPlatformMetadata.version || appVersion),
+                    "build": !isMac ? nextBuild : (otherPlatformMetadata.build || currentBuild)
                 }
             }
         };

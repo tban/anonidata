@@ -13,6 +13,10 @@ const BUILD_NUMBER_STR: &str = env!("CARGO_BUILD_NUMBER");
 struct PlatformInfo {
     filename: String,
     url: String,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    build: Option<u64>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -61,13 +65,22 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
     
     log::info!("Current version: {} (Build #{})", current_version, current_build);
 
-    // 1. Fetch remote version.json
+    // 1. Fetch remote version.json with cache buster to prevent CDN/local caching
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    let response = client.get(VERSION_JSON_URL)
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let version_url_with_cache_buster = format!("{}&t={}", VERSION_JSON_URL, timestamp);
+
+    let response = client.get(&version_url_with_cache_buster)
+        .header(reqwest::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .header(reqwest::header::PRAGMA, "no-cache")
+        .header(reqwest::header::EXPIRES, "0")
         .send()
         .map_err(|e| format!("HTTP request failed: {}", e))?;
 
@@ -78,42 +91,7 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
     let remote_data: VersionJson = response.json()
         .map_err(|e| format!("Failed to parse version.json: {}", e))?;
 
-    log::info!("Remote version: {} (Build #{})", remote_data.version, remote_data.build);
-
-    // 2. Compare versions
-    let mut update_available = false;
-    if let Some(ord) = compare_semver(&remote_data.version, &current_version) {
-        match ord {
-            std::cmp::Ordering::Greater => update_available = true,
-            std::cmp::Ordering::Equal => {
-                if remote_data.build > current_build {
-                    update_available = true;
-                }
-            }
-            std::cmp::Ordering::Less => {}
-        }
-    } else {
-        // Fallback simple comparison if semver parsing fails (which shouldn't happen)
-        if remote_data.version != current_version {
-            update_available = true;
-        }
-    }
-
-    if !update_available {
-        log::info!("Application is up-to-date.");
-        if manual {
-            app.dialog()
-                .message("La aplicación está actualizada a la última versión.")
-                .title("Actualización")
-                .kind(MessageDialogKind::Info)
-                .blocking_show();
-        }
-        return Ok(());
-    }
-
-    log::info!("New version available: {}.", remote_data.version);
-
-    // 3. Determine platform download key
+    // Determine platform download key
     let os_key = if cfg!(target_os = "macos") {
         "mac"
     } else if cfg!(target_os = "windows") {
@@ -130,14 +108,73 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
         }
     };
 
+    // Use platform-specific version and build if available, otherwise fallback to root-level values
+    let target_version = platform_info.version.as_deref().unwrap_or(&remote_data.version);
+    let target_build = platform_info.build.unwrap_or(remote_data.build);
+
+    log::info!(
+        "Remote version info for platform '{}': {} (Build #{}) [Root: {} (Build #{})]",
+        os_key,
+        target_version,
+        target_build,
+        remote_data.version,
+        remote_data.build
+    );
+
+    // 2. Compare versions
+    let mut update_available = false;
+    if let Some(ord) = compare_semver(target_version, &current_version) {
+        match ord {
+            std::cmp::Ordering::Greater => update_available = true,
+            std::cmp::Ordering::Equal => {
+                if target_build > current_build {
+                    update_available = true;
+                }
+            }
+            std::cmp::Ordering::Less => {}
+        }
+    } else {
+        // Fallback simple comparison if semver parsing fails (which shouldn't happen)
+        if target_version != &current_version {
+            update_available = true;
+        }
+    }
+
+    if !update_available {
+        log::info!("Application is up-to-date.");
+        if manual {
+            app.dialog()
+                .message("La aplicación está actualizada a la última versión.")
+                .title("Actualización")
+                .kind(MessageDialogKind::Info)
+                .blocking_show();
+        }
+        return Ok(());
+    }
+
+    log::info!("New version available: {}.", target_version);
+
     // Replace {VERSION} template in URL if present
-    let mut download_url = platform_info.url.replace("{VERSION}", &remote_data.version);
+    let mut download_url = platform_info.url.replace("{VERSION}", target_version);
 
     // Convert Google Drive view URLs to direct download URLs
     if download_url.contains("drive.google.com/open?id=") {
         download_url = download_url.replace("/open?id=", "/uc?export=download&id=");
         download_url = download_url.replace("&usp=drive_fs", "");
         download_url = format!("{}&confirm=t", download_url);
+    }
+
+    // Agregar un parámetro de tiempo (cache buster) para forzar la descarga de la última versión
+    if download_url.contains("drive.google.com") {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        if download_url.contains('?') {
+            download_url = format!("{}&t={}", download_url, timestamp);
+        } else {
+            download_url = format!("{}?t={}", download_url, timestamp);
+        }
     }
 
     let filename = &platform_info.filename;
@@ -170,6 +207,9 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
     log::info!("Downloading installer to {:?}", temp_file_path);
 
     let mut download_response = client.get(&download_url)
+        .header(reqwest::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .header(reqwest::header::PRAGMA, "no-cache")
+        .header(reqwest::header::EXPIRES, "0")
         .send()
         .map_err(|e| format!("Failed to request installer download: {}", e))?;
 
@@ -209,9 +249,18 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
             }
             
             if !file_id.is_empty() {
-                let bypass_url = format!("https://drive.usercontent.google.com/download?id={}&export=download&confirm={}&uuid={}", file_id, confirm, uuid);
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let bypass_url = format!("https://drive.usercontent.google.com/download?id={}&export=download&confirm={}&uuid={}&t={}", file_id, confirm, uuid, timestamp);
                 log::info!("Retrying download with bypass URL: {}", bypass_url);
-                download_response = client.get(&bypass_url).send().map_err(|e| format!("Failed bypass request: {}", e))?;
+                download_response = client.get(&bypass_url)
+                    .header(reqwest::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                    .header(reqwest::header::PRAGMA, "no-cache")
+                    .header(reqwest::header::EXPIRES, "0")
+                    .send()
+                    .map_err(|e| format!("Failed bypass request: {}", e))?;
                 
                 if !download_response.status().is_success() {
                     return Err(format!("Bypass download failed: {}", download_response.status()));
@@ -257,16 +306,23 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
 
     log::info!("Download completed successfully.");
 
+    // Cerrar el archivo explícitamente para liberar el lock de escritura (crucial en Windows)
+    drop(out_file);
+
     // 6. Execute installer and exit application
     #[cfg(target_os = "windows")]
     {
-        log::info!("Spawning Windows installer...");
-        let status = std::process::Command::new(&temp_file_path)
+        log::info!("Spawning Windows installer via cmd start...");
+        // Usamos 'cmd /c start' para asegurar que Windows gestione correctamente los permisos UAC (elevación)
+        // y desvincule el proceso de instalación del ciclo de vida de la app padre.
+        let status = std::process::Command::new("cmd")
+            .args(["/c", "start", "", &temp_file_path.to_string_lossy()])
             .spawn();
 
         match status {
             Ok(_) => {
-                log::info!("Installer spawned successfully. Exiting AnoniData.");
+                log::info!("Installer spawned successfully via cmd. Exiting AnoniData.");
+                std::thread::sleep(std::time::Duration::from_millis(500));
                 app.exit(0);
             }
             Err(e) => {
