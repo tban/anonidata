@@ -770,7 +770,7 @@ function App() {
     }
   }, [files, isDetecting, reviewState, isProcessing, handleStartReview]);
 
-  const handleFinishReview = async (approvedIndices: number[]) => {
+  const handleFinishReview = async (approvedIndices: number[], strategy: 'black_box' | 'text_label') => {
     if (!reviewState) return;
 
     try {
@@ -780,7 +780,7 @@ function App() {
         approvedIndices,
         { 
           isImagePdf: reviewState.pdfType === 'image',
-          redaction_strategy: redactionStrategy
+          redaction_strategy: strategy
         }
       );
 
@@ -948,6 +948,7 @@ function App() {
         originalFilePath={reviewState.originalFilePath}
         preAnonymizedPath={reviewState.preAnonymizedPath}
         detectionsPath={reviewState.detectionsPath}
+        defaultStrategy={redactionStrategy}
         onFinish={handleFinishReview}
         onCancel={handleCancelReview}
       />

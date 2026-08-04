@@ -10,7 +10,8 @@ interface ReviewScreenProps {
   originalFilePath: string
   preAnonymizedPath: string
   detectionsPath: string
-  onFinish: (approvedIndices: number[]) => void
+  defaultStrategy: 'black_box' | 'text_label'
+  onFinish: (approvedIndices: number[], strategy: 'black_box' | 'text_label') => void
   onCancel: () => void
 }
 
@@ -18,11 +19,13 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   originalFilePath,
   preAnonymizedPath,
   detectionsPath,
+  defaultStrategy,
   onFinish,
   onCancel
 }) => {
   const [detections, setDetections] = useState<Detection[]>([])
   const [approvedIndices, setApprovedIndices] = useState<Set<number>>(new Set())
+  const [localStrategy, setLocalStrategy] = useState<'black_box' | 'text_label'>(defaultStrategy)
   const [rejectedIndices, setRejectedIndices] = useState<Set<number>>(new Set())
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
@@ -219,7 +222,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
 
   const handleFinish = async () => {
     const approved = Array.from(approvedIndices)
-    onFinish(approved)
+    onFinish(approved, localStrategy)
   }
 
   const stats = {
@@ -341,7 +344,22 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
         </div>
 
         {/* Botones de acción */}
-        <div className="p-4 border-t border-stone-800 glass-dark backdrop-blur-lg space-y-2">
+        <div className="p-4 border-t border-stone-800 glass-dark backdrop-blur-lg space-y-3">
+          <div className="flex flex-col gap-1.5 bg-stone-900/60 p-3 rounded-xl border border-stone-850">
+            <label htmlFor="review-strategy-select" className="text-[11px] font-semibold text-stone-400">
+              Tipo de anonimización:
+            </label>
+            <select
+              id="review-strategy-select"
+              value={localStrategy}
+              onChange={(e) => setLocalStrategy(e.target.value as 'black_box' | 'text_label')}
+              className="bg-stone-950 text-stone-200 border border-stone-850 rounded-lg px-2 py-1.5 text-xs focus:border-teal-500 outline-none cursor-pointer"
+            >
+              <option value="black_box">Tachón negro</option>
+              <option value="text_label">Texto [ANONIMIZADO]</option>
+            </select>
+          </div>
+
           <button
             onClick={handleFinish}
             disabled={approvedIndices.size === 0}
