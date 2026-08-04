@@ -248,7 +248,7 @@ npm run format           # Prettier
 - Usa redact annotations nativas de PyMuPDF
 - Elimina contenido subyacente
 - No solo cubre visualmente
-- Limpia metadatos del PDF
+- **Limpieza profunda de metadatos (anti-forense):** Elimina y limpia metadatos sensibles (XMP y Document Info) reemplazando campos como autor, título, creador y productor por el valor genérico "AnoniData", y borrando por completo las fechas de creación y modificación originales para asegurar la total no trazabilidad del archivo.
 
 ---
 

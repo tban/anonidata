@@ -124,7 +124,7 @@ Salida: `release/AnoniData-1.0.0-universal.dmg`
 - ✅ **Procesamiento local:** Ningún dato sale de tu ordenador
 - ✅ **Zero retention:** Archivos temporales eliminados automáticamente
 - ✅ **No telemetría:** Sin analytics ni tracking
-- ✅ **Metadata cleaning:** Elimina metadatos del PDF
+- ✅ **Metadata cleaning:** Elimina metadatos del PDF (limpia datos XMP, diccionario de información y elimina fechas de creación/modificación originales)
 - ✅ **Logs sanitizados:** No contienen información sensible
 
 ## Licencia
