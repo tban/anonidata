@@ -57,6 +57,10 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
                 # Obtener opciones específicas para este archivo e incorporarlas a su configuración
                 this_file_opts = file_options.get(file_path, {})
                 file_settings_dict = settings_dict.copy()
+                if isinstance(options, dict):
+                    for k, v in options.items():
+                        if k != "fileOptions":
+                            file_settings_dict[k] = v
                 if isinstance(this_file_opts, dict):
                     file_settings_dict.update(this_file_opts)
                 
@@ -166,9 +170,15 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
         detections_path = request.get("detectionsPath")
         approved_indices = set(request.get("approvedIndices", []))
         settings_dict = request.get("settings", {})
+        options = request.get("options", {})
+
+        # Combinar settings con opciones específicas de esta llamada
+        file_settings_dict = settings_dict.copy()
+        if isinstance(options, dict):
+            file_settings_dict.update(options)
 
         # Crear configuración
-        settings = Settings(**settings_dict)
+        settings = Settings(**file_settings_dict)
 
         try:
             from processors.anonymizer import Anonymizer
@@ -239,7 +249,7 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "success": True,
             "status": "healthy",
-            "version": "1.0.0",
+            "version": "1.0.11",
         }
 
     elif action == "fetch_url":
@@ -293,6 +303,7 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     total_text_len = 0
                     pages_to_check = min(doc.page_count, 3)
                     page_count = doc.page_count
+                    has_large_images = False
                     
                     for i in range(pages_to_check):
                         emit_progress(file_path, 30 + int((i + 1) * (50 / pages_to_check)), f"Analizando texto (pág. {i+1}/{pages_to_check})...")
@@ -303,14 +314,39 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         # Eliminar espacios para contar contenido real
                         dense_text = "".join(text.split())
                         total_text_len += len(dense_text)
+
+                        # Detectar si la página tiene imágenes grandes que cubran >40% de la página
+                        # (Consistente con anonymizer.py _is_scanned_page)
+                        image_list = page.get_images(full=True)
+                        if len(image_list) > 0:
+                            page_area = page.rect.width * page.rect.height
+                            for img in image_list:
+                                xref = img[0]
+                                try:
+                                    img_rects = page.get_image_rects(xref)
+                                    if img_rects:
+                                        img_rect = img_rects[0]
+                                        img_area = (img_rect.x1 - img_rect.x0) * (img_rect.y1 - img_rect.y0)
+                                        if img_area > page_area * 0.4:
+                                            has_large_images = True
+                                            logger.debug(f"Página {i} tiene imagen grande ({img_area/page_area*100:.1f}%) -> tratada como escaneada/imagen")
+                                            break
+                                except Exception:
+                                    pass
+                            if has_large_images:
+                                break
                     
                     emit_progress(file_path, 90, "Clasificando formato...")
                     time.sleep(0.1)
                     doc.close()
                     
-                    # Criterio: > 300 caracteres reales = texto
-                    pdf_type = "text" if total_text_len > 300 else "image"
-                    logger.info(f"Check PDF type: {file_path} -> total_text_len={total_text_len}, classified as={pdf_type}")
+                    # Criterio: Si tiene imágenes grandes, es imagen. Si no, decidir por longitud de texto.
+                    if has_large_images:
+                        pdf_type = "image"
+                    else:
+                        pdf_type = "text" if total_text_len > 300 else "image"
+                        
+                    logger.info(f"Check PDF type: {file_path} -> total_text_len={total_text_len}, has_large_images={has_large_images}, classified as={pdf_type}")
                     
                     emit_progress(file_path, 100, "Detección finalizada")
                     time.sleep(0.1)
@@ -364,13 +400,33 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
             
             emit_progress(file_path, 0, "Iniciando OCR...")
             
-            # Verificar Tesseract cmd (macOS homebrew paths)
-            tesseract_path = shutil.which("tesseract")
-            if not tesseract_path and sys.platform == "darwin":
-                for path in ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"]:
-                    if os.path.exists(path):
-                        tesseract_path = path
-                        break
+            # 1. Comprobar si Tesseract está empaquetado como recurso (portable)
+            tesseract_path = None
+            if hasattr(sys, '_MEIPASS'):
+                bundled_tesseract = os.path.join(sys._MEIPASS, 'tesseract', 'tesseract.exe')
+                if os.path.exists(bundled_tesseract):
+                    tesseract_path = bundled_tesseract
+                    # Configurar TESSDATA_PREFIX para apuntar a la carpeta de idiomas portada directamente
+                    os.environ['TESSDATA_PREFIX'] = os.path.join(sys._MEIPASS, 'tesseract', 'tessdata')
+            
+            # 2. Si no es portable, buscar en el PATH o en las rutas por defecto
+            if not tesseract_path:
+                tesseract_path = shutil.which("tesseract")
+                if not tesseract_path:
+                    if sys.platform == "darwin":
+                        for path in ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"]:
+                            if os.path.exists(path):
+                                tesseract_path = path
+                                break
+                    elif sys.platform == "win32":
+                        for path in [
+                            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+                            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe")
+                        ]:
+                            if os.path.exists(path):
+                                tesseract_path = path
+                                break
             if tesseract_path:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_path
  

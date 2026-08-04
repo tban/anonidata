@@ -27,7 +27,7 @@ class Settings(BaseModel):
     detect_addresses: bool = True
     detect_phones: bool = True
     detect_emails: bool = True
-    detect_nss: bool = False
+    detect_nss: bool = True
     detect_iban: bool = True
     detect_signatures: bool = True
     detect_qr_codes: bool = True
@@ -35,7 +35,7 @@ class Settings(BaseModel):
     # Anonimización
     redaction_color: tuple[float, float, float] = (0.8, 0.8, 0.8)  # Gris claro
     pixelation_level: int = 16
-    redaction_strategy: Literal["black_box", "pixelate", "blur"] = "black_box"
+    redaction_strategy: Literal["black_box", "pixelate", "blur", "text_label"] = "black_box"
 
     # Performance
     max_workers: int = 4

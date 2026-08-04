@@ -224,11 +224,13 @@ class Anonymizer:
             for img in image_list:
                 xref = img[0]
                 try:
-                    img_rect = page.get_image_bbox(xref)
-                    img_area = (img_rect.x1 - img_rect.x0) * (img_rect.y1 - img_rect.y0)
-                    if img_area > page_area * 0.4:
-                        logger.debug(f"Página tiene imagen grande que cubre {img_area/page_area*100:.1f}% del área")
-                        return True
+                    img_rects = page.get_image_rects(xref)
+                    if img_rects:
+                        img_rect = img_rects[0]
+                        img_area = (img_rect.x1 - img_rect.x0) * (img_rect.y1 - img_rect.y0)
+                        if img_area > page_area * 0.4:
+                            logger.debug(f"Página tiene imagen grande que cubre {img_area/page_area*100:.1f}% del área")
+                            return True
                 except:
                     pass
 
@@ -254,35 +256,24 @@ class Anonymizer:
         # Las anotaciones son OVERLAYS verdaderos que NO modifican el contenido subyacente
         for match in matches:
             bbox = match.bbox
+            
+            # Obtener el rectángulo correcto considerando la rotación
             if page.rotation != 0:
                 # Las coordenadas de detección (bbox) en PDFs de imagen suelen corresponder a la vista visual
                 # Transformamos esas coordenadas visuales a UserSpace para dibujar sobre el PDF correctamente
-                
-                # Obtener matriz de derotación (Visual -> UserSpace)
                 mat = page.derotation_matrix
-                
-                # Transformar el rectángulo visual a UserSpace
                 rect_vis = fitz.Rect(bbox)
-                rect_us = rect_vis * mat
-                
-                logger.debug(f"Redaction: Visual {bbox} -> User {rect_us} (Rot: {page.rotation})")
-                
-                # Dibujar el rectángulo transformado
-                shape = page.new_shape()
-                shape.draw_rect(rect_us)
-                shape.finish(
-                    fill=self.settings.redaction_color,
-                    color=self.settings.redaction_color,
-                    width=0
-                )
-                shape.commit()
+                target_rect = rect_vis * mat
+                logger.debug(f"Redaction: Visual {bbox} -> User {target_rect} (Rot: {page.rotation})")
             else:
-                # Usar bbox original sin rotación
-                rect = fitz.Rect(bbox)
+                target_rect = fitz.Rect(bbox)
 
+            if self.settings.redaction_strategy == "text_label":
+                self._apply_scanned_text_label(page, target_rect)
+            else:
                 # Usar page.new_shape() para dibujar rectángulos opacos
                 shape = page.new_shape()
-                shape.draw_rect(rect)
+                shape.draw_rect(target_rect)
                 shape.finish(
                     fill=self.settings.redaction_color,
                     color=self.settings.redaction_color,
@@ -313,6 +304,8 @@ class Anonymizer:
 
             if self.settings.redaction_strategy == "black_box":
                 self._apply_black_box(page, bbox)
+            elif self.settings.redaction_strategy == "text_label":
+                self._apply_text_label(page, bbox)
             elif self.settings.redaction_strategy == "pixelate":
                 self._apply_pixelation(page, bbox)
             elif self.settings.redaction_strategy == "blur":
@@ -335,6 +328,54 @@ class Anonymizer:
         # Marcar región para redacción con relleno negro
         # fill: color de relleno después de eliminar el contenido
         page.add_redact_annot(rect, fill=self.settings.redaction_color)
+
+    def _apply_text_label(self, page: fitz.Page, bbox: tuple) -> None:
+        """
+        Aplica redacción destructiva con texto genérico '[ANONIMIZADO]'
+        """
+        rect = fitz.Rect(bbox)
+        
+        # Calcular tamaño de letra proporcional al alto de la caja
+        height = rect.y1 - rect.y0
+        fontsize = max(5.0, min(11.0, height * 0.65))
+        
+        # Marcar región para redacción con relleno gris muy claro y texto '[ANONIMIZADO]'
+        page.add_redact_annot(
+            rect,
+            text="[ANONIMIZADO]",
+            fontname="helv",
+            fontsize=fontsize,
+            fill=(0.95, 0.95, 0.95),      # Fondo gris muy claro
+            text_color=(0.7, 0.1, 0.1),    # Texto rojo oscuro/burdeos
+            align=1                       # Centrado
+        )
+
+    def _apply_scanned_text_label(self, page: fitz.Page, rect: fitz.Rect) -> None:
+        """
+        Dibuja un rectángulo de fondo y el texto '[ANONIMIZADO]' encima
+        para páginas escaneadas.
+        """
+        # Dibujar fondo
+        shape = page.new_shape()
+        shape.draw_rect(rect)
+        shape.finish(
+            fill=(0.95, 0.95, 0.95),
+            color=(0.95, 0.95, 0.95),
+            width=0
+        )
+        shape.commit()
+        
+        # Insertar texto
+        height = rect.y1 - rect.y0
+        fontsize = max(5.0, min(11.0, height * 0.65))
+        page.insert_textbox(
+            rect,
+            "[ANONIMIZADO]",
+            fontsize=fontsize,
+            fontname="helv",
+            color=(0.7, 0.1, 0.1),
+            align=1
+        )
 
     def _apply_pixelation(self, page: fitz.Page, bbox: tuple) -> None:
         """
