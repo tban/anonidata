@@ -43,6 +43,12 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
   const [loadingStep, setLoadingStep] = useState('Cargando detecciones')
   const viewerContainerRef = React.useRef<HTMLDivElement>(null)
 
+  // Estados para el modal de repetición de área
+  const [pendingManualBbox, setPendingManualBbox] = useState<[number, number, number, number] | null>(null)
+  const [rangeStartPage, setRangeStartPage] = useState(1)
+  const [rangeEndPage, setRangeEndPage] = useState(1)
+  const [manualType, setManualType] = useState<'MANUAL_TEXT' | 'MANUAL_IMAGE'>('MANUAL_IMAGE')
+
   // Enriquecer detecciones con estado usando useMemo
   const enrichedDetections = React.useMemo(() => {
     return detections.map(d => ({
@@ -149,36 +155,55 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
     setTotalPages(doc.numPages)
   }
 
-  const handleAddManualDetection = async (bbox: [number, number, number, number]) => {
-    // Crear nueva detección manual
-    const newDetection: Detection = {
-      index: detections.length,
-      type: 'MANUAL',
-      text: 'Selección manual',
-      bbox: bbox,
-      page_num: currentPage - 1, // PyMuPDF usa base-0
-      confidence: 1.0,
-      source: 'manual',
+  const handleAddManualDetection = (bbox: [number, number, number, number]) => {
+    // En lugar de agregar inmediatamente, abrimos el modal
+    setPendingManualBbox(bbox)
+    setRangeStartPage(currentPage)
+    setRangeEndPage(currentPage)
+    setManualType('MANUAL_IMAGE') // Default to image/stamp to be safe
+  }
+
+  const confirmManualDetection = async () => {
+    if (!pendingManualBbox) return
+
+    const startIdx = Math.max(1, Math.min(rangeStartPage, totalPages))
+    const endIdx = Math.max(startIdx, Math.min(rangeEndPage, totalPages))
+
+    const newDetections: Detection[] = []
+    let nextIndex = detections.length
+
+    for (let p = startIdx; p <= endIdx; p++) {
+      newDetections.push({
+        index: nextIndex++,
+        type: manualType,
+        text: 'Selección manual',
+        bbox: pendingManualBbox,
+        page_num: p - 1, // PyMuPDF usa base-0
+        confidence: 1.0,
+        source: 'manual',
+      })
     }
 
-    // Agregar a la lista de detecciones
-    const updatedDetections = [...detections, newDetection]
+    const updatedDetections = [...detections, ...newDetections]
     setDetections(updatedDetections)
 
-    // Marcar como aprobada automáticamente
     const newApproved = new Set(approvedIndices)
-    newApproved.add(newDetection.index)
+    newDetections.forEach(d => newApproved.add(d.index))
     setApprovedIndices(newApproved)
 
     setOverlayVersion(v => v + 1)
+    setPendingManualBbox(null)
 
-    // Guardar detecciones actualizadas en el archivo JSON
     try {
       await anonidata.review.saveDetections(detectionsPath, updatedDetections)
-      console.log('Nueva detección manual guardada:', newDetection)
+      console.log(`Guardadas ${newDetections.length} nuevas detecciones manuales.`)
     } catch (error) {
-      console.error('Error guardando detección manual:', error)
+      console.error('Error guardando detecciones manuales:', error)
     }
+  }
+
+  const cancelManualDetection = () => {
+    setPendingManualBbox(null)
   }
 
   const handleDetectionClick = (index: number) => {
@@ -519,6 +544,81 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
           )}
         </div>
       </div>
+
+      {/* Modal para repetición de área */}
+      {pendingManualBbox && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-stone-900 border border-stone-800 rounded-xl p-6 shadow-2xl max-w-sm w-full">
+            <h3 className="text-lg font-semibold text-stone-100 mb-2">Añadir Selección Manual</h3>
+            <p className="text-sm text-stone-400 mb-4">
+              Puedes aplicar esta misma marca a múltiples páginas simultáneamente.
+            </p>
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex-1">
+                <label className="block text-xs text-stone-500 mb-1">Desde página:</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={rangeStartPage}
+                  onChange={(e) => setRangeStartPage(parseInt(e.target.value) || 1)}
+                  className="w-full bg-stone-950 text-stone-200 border border-stone-800 rounded-lg px-3 py-2 outline-none focus:border-teal-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs text-stone-500 mb-1">Hasta página:</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={rangeEndPage}
+                  onChange={(e) => setRangeEndPage(parseInt(e.target.value) || totalPages)}
+                  className="w-full bg-stone-950 text-stone-200 border border-stone-800 rounded-lg px-3 py-2 outline-none focus:border-teal-500"
+                />
+              </div>
+            </div>
+            <div className="mb-6">
+              <label className="block text-xs text-stone-500 mb-2">¿Qué tipo de contenido estás ocultando?</label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-sm text-stone-200 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="manualType"
+                    checked={manualType === 'MANUAL_TEXT'}
+                    onChange={() => setManualType('MANUAL_TEXT')}
+                    className="accent-teal-500"
+                  />
+                  <span>Es solo Texto (respeta la configuración global)</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-stone-200 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="manualType"
+                    checked={manualType === 'MANUAL_IMAGE'}
+                    onChange={() => setManualType('MANUAL_IMAGE')}
+                    className="accent-teal-500"
+                  />
+                  <span>Es una Imagen, Sello o Firma (fuerza el tachón opaco)</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={cancelManualDetection}
+                className="flex-1 btn-secondary"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmManualDetection}
+                className="flex-1 btn-primary"
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

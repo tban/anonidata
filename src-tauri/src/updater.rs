@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager, Emitter};
 use serde_json::json;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
-const VERSION_JSON_URL: &str = "https://drive.google.com/uc?export=download&id=11wml7BF4ZO17coEiimKNJk_tfIMAvWDq";
+const VERSION_JSON_URL: &str = "https://raw.githubusercontent.com/tban/anonidata/main/version.json";
 const BUILD_NUMBER_STR: &str = env!("CARGO_BUILD_NUMBER");
 
 #[derive(Deserialize, Debug)]
@@ -157,25 +157,6 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
     // Replace {VERSION} template in URL if present
     let mut download_url = platform_info.url.replace("{VERSION}", target_version);
 
-    // Convert Google Drive view URLs to direct download URLs
-    if download_url.contains("drive.google.com/open?id=") {
-        download_url = download_url.replace("/open?id=", "/uc?export=download&id=");
-        download_url = download_url.replace("&usp=drive_fs", "");
-        download_url = format!("{}&confirm=t", download_url);
-    }
-
-    // Agregar un parámetro de tiempo (cache buster) para forzar la descarga de la última versión
-    if download_url.contains("drive.google.com") {
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        if download_url.contains('?') {
-            download_url = format!("{}&t={}", download_url, timestamp);
-        } else {
-            download_url = format!("{}?t={}", download_url, timestamp);
-        }
-    }
 
     let filename = &platform_info.filename;
 
@@ -217,59 +198,6 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
         return Err(format!("Installer download server returned: {}", download_response.status()));
     }
 
-    if let Some(content_type) = download_response.headers().get(reqwest::header::CONTENT_TYPE) {
-        if content_type.to_str().unwrap_or("").starts_with("text/html") {
-            log::info!("Intercepted Google Drive HTML warning page. Attempting bypass...");
-            let text = download_response.text().map_err(|e| e.to_string())?;
-            
-            let mut uuid = "";
-            if let Some(pos) = text.find("name=\"uuid\" value=\"") {
-                let start = pos + 19;
-                if let Some(end) = text[start..].find("\"") {
-                    uuid = &text[start..start + end];
-                }
-            }
-            
-            let mut confirm = "t";
-            if let Some(pos) = text.find("name=\"confirm\" value=\"") {
-                let start = pos + 22;
-                if let Some(end) = text[start..].find("\"") {
-                    confirm = &text[start..start + end];
-                }
-            }
-            
-            let mut file_id = "";
-            if let Some(pos) = download_url.find("id=") {
-                let start = pos + 3;
-                if let Some(end) = download_url[start..].find('&') {
-                    file_id = &download_url[start..start + end];
-                } else {
-                    file_id = &download_url[start..];
-                }
-            }
-            
-            if !file_id.is_empty() {
-                let timestamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                let bypass_url = format!("https://drive.usercontent.google.com/download?id={}&export=download&confirm={}&uuid={}&t={}", file_id, confirm, uuid, timestamp);
-                log::info!("Retrying download with bypass URL: {}", bypass_url);
-                download_response = client.get(&bypass_url)
-                    .header(reqwest::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
-                    .header(reqwest::header::PRAGMA, "no-cache")
-                    .header(reqwest::header::EXPIRES, "0")
-                    .send()
-                    .map_err(|e| format!("Failed bypass request: {}", e))?;
-                
-                if !download_response.status().is_success() {
-                    return Err(format!("Bypass download failed: {}", download_response.status()));
-                }
-            } else {
-                return Err("Failed to extract file ID from Google Drive URL".to_string());
-            }
-        }
-    }
 
     let total_size = download_response.content_length().unwrap_or(0);
     

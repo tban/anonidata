@@ -37,7 +37,9 @@ export const DETECTION_COLORS: Record<string, string> = {
   IBAN: '#ec4899', // pink
   SIGNATURE: '#6366f1', // indigo
   QR_CODE: '#14b8a6', // teal
-  MANUAL: '#f59e0b', // amber - selección manual
+  MANUAL: '#f59e0b', // amber - por retrocompatibilidad
+  MANUAL_TEXT: '#f59e0b', // amber
+  MANUAL_IMAGE: '#d97706', // dark amber
   default: '#6b7280' // gray
 }
 

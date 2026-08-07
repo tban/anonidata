@@ -249,7 +249,7 @@ def process_request(request: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "success": True,
             "status": "healthy",
-            "version": "1.0.11",
+            "version": "1.0.14",
         }
 
     elif action == "fetch_url":

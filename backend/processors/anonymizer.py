@@ -268,10 +268,11 @@ class Anonymizer:
             else:
                 target_rect = fitz.Rect(bbox)
 
-            if self.settings.redaction_strategy == "text_label":
+            if match.type not in ["MANUAL", "MANUAL_IMAGE"] and self.settings.redaction_strategy == "text_label":
                 self._apply_scanned_text_label(page, target_rect)
             else:
-                # Usar page.new_shape() para dibujar rectángulos opacos
+                # Usar page.new_shape() para dibujar rectángulos opacos (tachones)
+                # Se aplica a selecciones MANUALES siempre, y a todo lo demás si no es text_label
                 shape = page.new_shape()
                 shape.draw_rect(target_rect)
                 shape.finish(
@@ -302,14 +303,18 @@ class Anonymizer:
 
             logger.debug(f"  [{i}/{len(matches)}] {match.type}: '{match.text}' | bbox: {bbox}")
 
-            if self.settings.redaction_strategy == "black_box":
+            if match.type in ["MANUAL", "MANUAL_IMAGE"]:
+                # Las detecciones de imagen manuales siempre llevan tachón
                 self._apply_black_box(page, bbox)
-            elif self.settings.redaction_strategy == "text_label":
-                self._apply_text_label(page, bbox)
-            elif self.settings.redaction_strategy == "pixelate":
-                self._apply_pixelation(page, bbox)
-            elif self.settings.redaction_strategy == "blur":
-                self._apply_blur(page, bbox)
+            else:
+                if self.settings.redaction_strategy == "black_box":
+                    self._apply_black_box(page, bbox)
+                elif self.settings.redaction_strategy == "text_label":
+                    self._apply_text_label(page, bbox)
+                elif self.settings.redaction_strategy == "pixelate":
+                    self._apply_pixelation(page, bbox)
+                elif self.settings.redaction_strategy == "blur":
+                    self._apply_blur(page, bbox)
 
         # Aplicar redacciones (solo para páginas con texto)
         logger.info(f"Aplicando {len(matches)} redacciones a página {page.number}")
@@ -339,14 +344,14 @@ class Anonymizer:
         height = rect.y1 - rect.y0
         fontsize = max(5.0, min(11.0, height * 0.65))
         
-        # Marcar región para redacción con relleno gris muy claro y texto '[ANONIMIZADO]'
+        # Marcar región para redacción con relleno blanco y texto negro
         page.add_redact_annot(
             rect,
             text="[ANONIMIZADO]",
             fontname="helv",
             fontsize=fontsize,
-            fill=(0.95, 0.95, 0.95),      # Fondo gris muy claro
-            text_color=(0.7, 0.1, 0.1),    # Texto rojo oscuro/burdeos
+            fill=(1.0, 1.0, 1.0),         # Fondo blanco
+            text_color=(0.0, 0.0, 0.0),   # Texto negro
             align=1                       # Centrado
         )
 
@@ -355,12 +360,12 @@ class Anonymizer:
         Dibuja un rectángulo de fondo y el texto '[ANONIMIZADO]' encima
         para páginas escaneadas.
         """
-        # Dibujar fondo
+        # Dibujar fondo blanco
         shape = page.new_shape()
         shape.draw_rect(rect)
         shape.finish(
-            fill=(0.95, 0.95, 0.95),
-            color=(0.95, 0.95, 0.95),
+            fill=(1.0, 1.0, 1.0),
+            color=(1.0, 1.0, 1.0),
             width=0
         )
         shape.commit()
@@ -373,7 +378,7 @@ class Anonymizer:
             "[ANONIMIZADO]",
             fontsize=fontsize,
             fontname="helv",
-            color=(0.7, 0.1, 0.1),
+            color=(0.0, 0.0, 0.0),
             align=1
         )
 
