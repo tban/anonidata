@@ -58,7 +58,7 @@ python --version  # 3.11+
 
 1. **Clonar repositorio:**
 ```bash
-git clone https://github.com/your-org/anonidata.git
+git clone https://github.com/tban/anonidata.git
 cd anonidata
 ```
 
@@ -133,4 +133,4 @@ MIT License - Ver [LICENSE](LICENSE)
 
 ## Soporte
 
-Para bugs y feature requests: https://github.com/your-org/anonidata/issues
+Para bugs y feature requests: https://github.com/tban/anonidata/issues
