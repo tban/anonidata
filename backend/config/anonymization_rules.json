@@ -89,6 +89,83 @@
       "enabled": true,
       "case_sensitive": true,
       "description": "Detecta Fdo./Firmado/Firma: seguido de nombres propios (2-4 palabras capitalizadas), preserva la abreviatura. Case-sensitive para evitar detectar artículos y preposiciones."
+    },
+    {
+      "id": "sindicatos",
+      "name": "Afiliación Sindical",
+      "pattern": "\\b(cuota\\s+sindical|sección\\s+sindical|afiliado\\s+a\\s+sindicato|afiliación\\s+sindical|sindicato\\s+de\\s+trabajadores|delegado\\s+sindical)\\b|\\b(CCOO|U\\.G\\.T\\.|UGT|C\\.S\\.I\\.F\\.|CSIF|C\\.G\\.T\\.|CGT|CNT|ELA|LAB)\\b",
+      "redact_groups": [0],
+      "preserve_groups": [],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta afiliaciones a sindicatos y términos sindicales"
+    },
+    {
+      "id": "grupo_sanguineo",
+      "name": "Grupo Sanguíneo",
+      "pattern": "(grupo\\s+sangu[íi]neo\\s*[:\\-=]?\\s*)?([ABO]{1,2}\\s*(?:[+-]|positivo|negativo)|RH\\s*[+-])(?:\\s|$|\\.|,)",
+      "redact_groups": [2],
+      "preserve_groups": [1],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta el grupo sanguíneo aislado o con etiqueta"
+    },
+    {
+      "id": "diagnosticos_valores",
+      "name": "Diagnóstico y Tratamiento por Etiqueta",
+      "pattern": "\\b(diagn[óo]stico|tratamiento|patolog[íi]a|sintomatolog[íi]a|prescripci[óo]n|enfermedad|paciente|historial\\s+cl[íi]nico)\\b\\s*[:\\-=]\\s*([^.\\n]+)",
+      "redact_groups": [2],
+      "preserve_groups": [1],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta información de salud después de etiquetas descriptivas"
+    },
+    {
+      "id": "diagnosticos_contexto",
+      "name": "Diagnóstico y Tratamiento por Contexto",
+      "pattern": "\\b(diagn[óo]stico\\s+de|tratamiento\\s+de|padece\\s+de|enfermo\\s+de)\\s+([a-záéíóúüñA-ZÁÉÍÓÚÜÑ\\s]+?)(?=\\b(?:y|con|en|el|la|los|las|del|de|desde|hace)\\b|\\.|\\,|$|\\n)",
+      "redact_groups": [2],
+      "preserve_groups": [1],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta menciones a enfermedades o tratamientos introducidos por preposiciones"
+    },
+    {
+      "id": "matriculas",
+      "name": "Matrículas de Vehículos",
+      "pattern": "(\\b\\d{4}[\\s-]*[B-DF-HJ-NP-TV-Z]{3}\\b|\\b[A-Z]{1,2}[\\s-]*\\d{4}[\\s-]*[A-Z]{1,2}\\b)",
+      "redact_groups": [1],
+      "preserve_groups": [],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta matrículas de vehículos españolas (modernas e históricas)"
+    },
+    {
+      "id": "pasaporte",
+      "name": "Pasaporte / NIE Extranjero",
+      "pattern": "\\b(Pasaporte|Pass(?:port)?|ID|Documento)\\s*[:\\-]?\\s*((?![A-Za-z]+\\b)[A-Za-z0-9]{6,15})\\b",
+      "redact_groups": [2],
+      "preserve_groups": [1],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta números de pasaporte o ID tras etiqueta explícita"
+    },
+    {
+      "id": "fechas_nacimiento",
+      "name": "Fechas de Nacimiento y Sensibles",
+      "pattern": "(?:fecha(?:\\s+de)?\\s+nacimiento|nacido\\s+el|nacida\\s+el|naci[óo]\\s+el|f\\.nac\\.?|f\\.n\\.?)\\s*[:\\-=]?\\s*(\\b\\d{1,2}[\\s/-]\\d{1,2}[\\s/-]\\d{2,4}\\b|\\b\\d{1,2}\\s+de\\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\\s+de\\s+\\d{4}\\b)",
+      "redact_groups": [1],
+      "preserve_groups": [],
+      "replacement": "X",
+      "enabled": true,
+      "case_sensitive": false,
+      "description": "Detecta fechas de nacimiento en formatos numéricos y de texto largo"
     }
   ],
   "settings": {

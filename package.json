@@ -1,8 +1,8 @@
 {
   "name": "anonidata",
   "productName": "Anonidata",
-  "version": "1.0.14",
-  "description": "Aplicación de escritorio para anonimización de PDFs conforme a RGPD",
+  "version": "1.0.15",
+  "description": "Herramienta de anonimización de documentos",
   "author": "AnoniData",
   "license": "MIT",
   "repository": {

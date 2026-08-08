@@ -38,11 +38,21 @@ _DNI_LABELED_RE = re.compile(
     re.IGNORECASE
 )
 
+# DNI/NIF sin etiqueta en texto libre
+_DNI_RAW_RE = re.compile(
+    r'\b(?:\d{8}|\d{1,2}\.\d{3}\.\d{3})-?[A-Za-z]\b'
+)
+
 # NIE con etiqueta: "NIE: X1234567A", "NIE X1.234.567-A"
 _NIE_LABELED_RE = re.compile(
     r'(NIE(?:\s*:)?\s*(?:n[úu]m\.?|n\.?[oº]\.?)?\s*)'
     r'([XYZxyz](?:\d{1}\.\d{3}\.\d{3}|\d{7})-?[A-Za-z])\b',
     re.IGNORECASE
+)
+
+# NIE sin etiqueta en texto libre
+_NIE_RAW_RE = re.compile(
+    r'\b[XYZxyz](?:\d{7}|\d{1}\.\d{3}\.\d{3})-?[A-Za-z]\b'
 )
 
 # CIF con etiqueta: "CIF: B12345678", "CIF B-12345678"
@@ -58,9 +68,26 @@ _NSS_LABELED_RE = re.compile(
     r'Seguridad\s+Social|'
     r'(?:Nº|N[oº°])\s*(?:Afiliación|afiliación))'
     r'(?:\s*:)?\s*'
-    r'(\d{2}[\s/-]?\d{8}[\s/-]?\d{2})\b',
+    r'(\d{2}[\s/-]?\d{8}[\s/-]?\d{2}|\d{12})\b',
     re.IGNORECASE
 )
+
+# NSS sin etiqueta en texto libre
+_NSS_RAW_RE = re.compile(
+    r'\b(\d{2}[\s/-]?\d{7,8}[\s/-]?\d{2}|\d{11,12})\b'
+)
+
+def _validate_nss_number(nss_str: str) -> bool:
+    """Valida un número de la Seguridad Social de España (módulo 97)"""
+    normalized = re.sub(r'[^\d]', '', nss_str)
+    if len(normalized) not in (11, 12):
+        return False
+    try:
+        n = int(normalized[:-2])
+        c = int(normalized[-2:])
+        return (n % 97) == c
+    except (ValueError, IndexError):
+        return False
 
 # Nombres con tratamiento formal: D., Don, Fdo., etc.
 _FORMAL_PREFIXES = [
@@ -104,12 +131,15 @@ _ADDRESS_KEYWORDS = [
     r'Bloque\s+',
 ]
 
+# Regex de dirección completa: soporta calle, número, piso/letra/portal, código postal y ciudad
 _ADDRESS_RE = re.compile(
-    r'(' + '|'.join(_ADDRESS_KEYWORDS) + r')'
-    r'([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+(?:\s+(?:de|del|la|los|las|el|y)\s+[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+){0,3})'
-    r'(?:\s*[,]?\s*(?:nº|n°|núm\.?|número)?\s*(\d{1,4}(?:\s*[A-Za-z])?))?'
-    r'(?:\s*[,]?\s*(\d{5}))?'
-    r'(?=[,\.\;\:]|\s*$|(?:\s+[A-Z]))',
+    r'\b(' + '|'.join(_ADDRESS_KEYWORDS) + r')\b'
+    r'([A-ZÁÉÍÓÚÜÑa-záéíóúüñ0-9ºª°\s\.\-\’,/]{1,50}?)'
+    r'(?:\s*[,/]?\s*(?:nº|n°|n\.º|núm\.?|número)?\s*(\d{1,4}(?:\s*[A-Za-z])?))'
+    r'(?:\s*[,/]?\s*(?:\d{1,2}[ºª°\s]+[A-Za-z0-9]?|bajo|principal|entresuelo|izq(?:uierda)?|der(?:echa)?|dupl(?:icado)?|portal\s*\d+|esc(?:alera)?\s*[A-Za-z0-9]+|pta\s*\d+|puerta\s*\d+))?'
+    r'(?:\s*[,/]?\s*(?:\d{1,2}[ºª°\s]+[A-Za-z0-9]?|bajo|principal|entresuelo|izq(?:uierda)?|der(?:echa)?|dupl(?:icado)?|portal\s*\d+|esc(?:alera)?\s*[A-Za-z0-9]+|pta\s*\d+|puerta\s*\d+))?'
+    r'(?:\s*[,/]?\s*(\d{5}))?'
+    r'(?:\s*[,/]?\s*([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+(?:\s+(?:de|del|la|los|las|el|y)\s+[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+){0,3}))?',
     re.IGNORECASE
 )
 
@@ -246,6 +276,14 @@ class PIIDetector:
             regex_ocr_matches = self._detect_with_regex(ocr_text_blocks, doc)
             matches.extend(regex_ocr_matches)
 
+            # Detección NER (Spacy)
+            if self.settings.detect_names and doc:
+                if progress_callback:
+                    progress_callback(35, "Detectando PII (IA NER)...")
+                logger.debug("Detectando entidades con IA (Spacy)...")
+                ner_matches = self._detect_with_ner(doc)
+                matches.extend(ner_matches)
+
             # También detectar DNI/NIE en texto completo de página para capturar casos fragmentados
             if doc:
                 logger.debug("Detectando DNI/NIE en texto completo de páginas...")
@@ -325,8 +363,9 @@ class PIIDetector:
         for block in text_blocks:
             text = block.text
 
-            # DNI/NIF con etiqueta - preservar etiqueta, redactar solo número
+            # DNI/NIF con y sin etiqueta
             if self.settings.detect_dni:
+                # 1. Con etiqueta (preservando etiqueta, redactando solo número)
                 for match in _DNI_LABELED_RE.finditer(text):
                     dni_number = match.group(2)
                     # Validar letra de control (evita falsos positivos)
@@ -343,6 +382,24 @@ class PIIDetector:
                             page_num=block.page_num,
                             confidence=1.0,
                             source="regex",
+                        )
+                    )
+
+                # 2. Sin etiqueta en texto libre
+                for match in _DNI_RAW_RE.finditer(text):
+                    dni_number = match.group(0)
+                    if not _validate_dni_letter(dni_number):
+                        continue
+
+                    precise_bbox = find_precise_bbox(doc, block.page_num, dni_number, block.bbox) if doc else block.bbox
+                    matches.append(
+                        PIIMatch(
+                            type="DNI",
+                            text=dni_number,
+                            bbox=precise_bbox or block.bbox,
+                            page_num=block.page_num,
+                            confidence=0.9,
+                            source="regex_raw",
                         )
                     )
 
@@ -364,8 +421,9 @@ class PIIDetector:
                         )
                     )
 
-            # NIE con etiqueta - preservar etiqueta, redactar solo número
+            # NIE con y sin etiqueta
             if self.settings.detect_nie:
+                # 1. Con etiqueta (preservando etiqueta, redactando solo número)
                 for match in _NIE_LABELED_RE.finditer(text):
                     nie_number = match.group(2)
                     # Validar letra de control
@@ -382,6 +440,24 @@ class PIIDetector:
                             page_num=block.page_num,
                             confidence=1.0,
                             source="regex",
+                        )
+                    )
+
+                # 2. Sin etiqueta en texto libre
+                for match in _NIE_RAW_RE.finditer(text):
+                    nie_number = match.group(0)
+                    if not _validate_nie_letter(nie_number):
+                        continue
+
+                    precise_bbox = find_precise_bbox(doc, block.page_num, nie_number, block.bbox) if doc else block.bbox
+                    matches.append(
+                        PIIMatch(
+                            type="NIE",
+                            text=nie_number,
+                            bbox=precise_bbox or block.bbox,
+                            page_num=block.page_num,
+                            confidence=0.9,
+                            source="regex_raw",
                         )
                     )
 
@@ -430,8 +506,9 @@ class PIIDetector:
                         )
                     )
 
-            # NSS (Número de Seguridad Social) - solo con contexto para evitar falsos positivos
-            if getattr(self.settings, 'detect_nss', False):
+            # NSS (Número de Seguridad Social)
+            if getattr(self.settings, 'detect_nss', True):
+                # 1. Con etiqueta
                 for match in _NSS_LABELED_RE.finditer(text):
                     nss_number = match.group(1)
                     precise_bbox = find_precise_bbox(doc, block.page_num, nss_number, block.bbox) if doc else block.bbox
@@ -443,6 +520,24 @@ class PIIDetector:
                             page_num=block.page_num,
                             confidence=0.95,
                             source="regex",
+                        )
+                    )
+
+                # 2. Sin etiqueta en texto libre
+                for match in _NSS_RAW_RE.finditer(text):
+                    nss_number = match.group(0)
+                    if not _validate_nss_number(nss_number):
+                        continue
+
+                    precise_bbox = find_precise_bbox(doc, block.page_num, nss_number, block.bbox) if doc else block.bbox
+                    matches.append(
+                        PIIMatch(
+                            type="NSS",
+                            text=nss_number,
+                            bbox=precise_bbox or block.bbox,
+                            page_num=block.page_num,
+                            confidence=0.9,
+                            source="regex_raw",
                         )
                     )
 
@@ -470,7 +565,7 @@ class PIIDetector:
 
 
 
-    def _detect_addresses(self, text_blocks: List[TextBlock]) -> List[PIIMatch]:
+    def _detect_addresses(self, text_blocks: List[TextBlock], doc=None) -> List[PIIMatch]:
         """
         Detecta direcciones usando palabras clave españolas.
         Usa el patrón precompilado _ADDRESS_RE y las constantes compartidas.
@@ -507,32 +602,26 @@ class PIIDetector:
 
                 # Si es "Domicilio:" o "Dirección:", solo redactar la dirección, no la etiqueta
                 if keyword.strip().lower().startswith(('domicilio', 'dirección')):
-                    address_parts = []
-                    if match.group(2):
-                        address_parts.append(match.group(2).strip())
-                    if match.group(3):
-                        address_parts.append(match.group(3).strip())
-                    if match.group(4):
-                        address_parts.append(match.group(4).strip())
-
-                    if address_parts:
-                        address_text = ' '.join(address_parts)
+                    address_text = matched_text[len(match.group(1)):].strip()
+                    if address_text:
+                        precise_bbox = find_precise_bbox(doc, block.page_num, address_text, block.bbox) if doc else block.bbox
                         matches.append(
                             PIIMatch(
                                 type="ADDRESS",
                                 text=address_text,
-                                bbox=block.bbox,
+                                bbox=precise_bbox or block.bbox,
                                 page_num=block.page_num,
                                 confidence=0.85,
                                 source="address_detector",
                             )
                         )
                 else:
+                    precise_bbox = find_precise_bbox(doc, block.page_num, matched_text, block.bbox) if doc else block.bbox
                     matches.append(
                         PIIMatch(
                             type="ADDRESS",
                             text=matched_text.strip(),
-                            bbox=block.bbox,
+                            bbox=precise_bbox or block.bbox,
                             page_num=block.page_num,
                             confidence=0.85,
                             source="address_detector",
@@ -601,21 +690,66 @@ class PIIDetector:
 
         return matches
 
+    def _detect_with_ner(self, doc) -> List[PIIMatch]:
+        """Detecta entidades nombradas usando Spacy de forma lazy."""
+        matches = []
+        if not doc:
+            return matches
+            
+        # Lazy load de Spacy
+        if self.nlp is None:
+            try:
+                import spacy
+                logger.info("Cargando modelo Spacy 'es_core_news_sm' por primera vez...")
+                self.nlp = spacy.load("es_core_news_sm")
+            except Exception as e:
+                logger.error(f"No se pudo cargar Spacy o el modelo es_core_news_sm: {e}")
+                # Asignar False para no intentar cargarlo de nuevo en cada llamada
+                self.nlp = False
+                
+        if not self.nlp:
+            return matches
+
+        for page_num in range(doc.page_count):
+            page = doc[page_num]
+            text = page.get_text()
+            if not text.strip():
+                continue
+                
+            # Procesar texto completo de la página
+            try:
+                spacy_doc = self.nlp(text)
+                for ent in spacy_doc.ents:
+                    if ent.label_ == "PER":
+                        # Filtrar falsos positivos muy cortos o largos
+                        if len(ent.text) < 4 or len(ent.text) > 40:
+                            continue
+                            
+                        # Buscar coordenadas precisas
+                        bbox = find_precise_bbox(doc, page_num, ent.text)
+                        if bbox:
+                            matches.append(
+                                PIIMatch(
+                                    type="PERSON",
+                                    text=ent.text,
+                                    bbox=bbox,
+                                    page_num=page_num,
+                                    confidence=0.85, # NER confidence is lower than exact regex
+                                    source="spacy_ner"
+                                )
+                            )
+                            logger.debug(f"NER (PER) detectado en página {page_num}: '{ent.text}'")
+            except Exception as e:
+                logger.warning(f"Error procesando página {page_num} con Spacy: {e}")
+
+        return matches
+
     def _detect_dni_nie_in_fullpage(self, doc) -> List[PIIMatch]:
         """
-        Detecta DNI/NIE procesando el texto completo de cada página.
-        Usa patrones precompilados con validación de letra de control.
-
-        Args:
-            doc: Documento PyMuPDF ya abierto
-
-        Returns:
-            Lista de matches de DNI/NIE encontrados
+        Detecta DNI/NIE/NSS procesando el texto completo de cada página.
+        Usa patrones precompilados con validación de letra de control / dígito de control.
         """
         if not doc:
-            return []
-
-        if not self.settings.detect_dni and not self.settings.detect_nie:
             return []
 
         matches = []
@@ -626,9 +760,9 @@ class PIIDetector:
 
             # Buscar DNI con validación
             if self.settings.detect_dni:
+                # Con etiqueta
                 for match in _DNI_LABELED_RE.finditer(text):
                     dni_number = match.group(2)
-
                     # Validar letra de control
                     if not _validate_dni_letter(dni_number):
                         logger.debug(f"DNI fullpage descartado por letra inválida: {dni_number}")
@@ -648,10 +782,29 @@ class PIIDetector:
                         )
                         logger.debug(f"DNI detectado en página completa {page_num}: '{dni_number}'")
 
+                # Sin etiqueta (raw)
+                for match in _DNI_RAW_RE.finditer(text):
+                    dni_number = match.group(0)
+                    if not _validate_dni_letter(dni_number):
+                        continue
+
+                    bbox = find_precise_bbox(doc, page_num, dni_number)
+                    if bbox:
+                        matches.append(
+                            PIIMatch(
+                                type="DNI",
+                                text=dni_number,
+                                bbox=bbox,
+                                page_num=page_num,
+                                confidence=0.9,
+                                source="regex_fullpage_raw",
+                            )
+                        )
+                        logger.debug(f"DNI raw detectado en página completa {page_num}: '{dni_number}'")
+
                 # Buscar CIF con validación
                 for match in _CIF_LABELED_RE.finditer(text):
                     cif_number = match.group(2)
-
                     if not _validate_cif(cif_number):
                         continue
 
@@ -671,9 +824,9 @@ class PIIDetector:
 
             # Buscar NIE con validación
             if self.settings.detect_nie:
+                # Con etiqueta
                 for match in _NIE_LABELED_RE.finditer(text):
                     nie_number = match.group(2)
-
                     # Validar letra de control
                     if not _validate_nie_letter(nie_number):
                         logger.debug(f"NIE fullpage descartado por letra inválida: {nie_number}")
@@ -692,6 +845,65 @@ class PIIDetector:
                             )
                         )
                         logger.debug(f"NIE detectado en página completa {page_num}: '{nie_number}'")
+
+                # Sin etiqueta (raw)
+                for match in _NIE_RAW_RE.finditer(text):
+                    nie_number = match.group(0)
+                    if not _validate_nie_letter(nie_number):
+                        continue
+
+                    bbox = find_precise_bbox(doc, page_num, nie_number)
+                    if bbox:
+                        matches.append(
+                            PIIMatch(
+                                type="NIE",
+                                text=nie_number,
+                                bbox=bbox,
+                                page_num=page_num,
+                                confidence=0.9,
+                                source="regex_fullpage_raw",
+                            )
+                        )
+                        logger.debug(f"NIE raw detectado en página completa {page_num}: '{nie_number}'")
+
+            # Buscar NSS con validación
+            if getattr(self.settings, 'detect_nss', True):
+                # Con etiqueta
+                for match in _NSS_LABELED_RE.finditer(text):
+                    nss_number = match.group(1)
+                    bbox = find_precise_bbox(doc, page_num, nss_number)
+                    if bbox:
+                        matches.append(
+                            PIIMatch(
+                                type="NSS",
+                                text=nss_number,
+                                bbox=bbox,
+                                page_num=page_num,
+                                confidence=0.95,
+                                source="regex_fullpage",
+                            )
+                        )
+                        logger.debug(f"NSS detectado en página completa {page_num}: '{nss_number}'")
+
+                # Sin etiqueta (raw)
+                for match in _NSS_RAW_RE.finditer(text):
+                    nss_number = match.group(0)
+                    if not _validate_nss_number(nss_number):
+                        continue
+
+                    bbox = find_precise_bbox(doc, page_num, nss_number)
+                    if bbox:
+                        matches.append(
+                            PIIMatch(
+                                type="NSS",
+                                text=nss_number,
+                                bbox=bbox,
+                                page_num=page_num,
+                                confidence=0.9,
+                                source="regex_fullpage_raw",
+                            )
+                        )
+                        logger.debug(f"NSS raw detectado en página completa {page_num}: '{nss_number}'")
 
         return matches
 
