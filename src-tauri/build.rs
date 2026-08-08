@@ -54,11 +54,8 @@ fn main() {
     // 2. Generate version.json in target directory if this is a release build
     if is_release {
         let version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "1.0.0".to_string());
-        let url_mac = format!(
-            "https://github.com/tban/tbanapps/releases/download/v{}/AnoniData.dmg",
-            version
-        );
-        let url_windows = "https://drive.google.com/uc?export=download&id=1aE8XuzonmI9Bi50Th7vk9FawOHkthf_4&confirm=t".to_string();
+        let url_mac = format!("https://github.com/tban/anonidata/releases/download/v{}/Anonidata.dmg", version);
+        let url_windows = format!("https://github.com/tban/anonidata/releases/download/v{}/anonidata.exe", version);
 
         let version_data = serde_json::json!({
             "productName": "AnoniData",
