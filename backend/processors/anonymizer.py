@@ -252,35 +252,47 @@ class Anonymizer:
         page_width = page_rect.width
         page_height = page_rect.height
 
-        # Para cada match, crear una anotación de cuadrado opaco
-        # Las anotaciones son OVERLAYS verdaderos que NO modifican el contenido subyacente
+        # 1. Marcar áreas para destruir el texto subyacente (OCR)
         for match in matches:
             bbox = match.bbox
-            
-            # Obtener el rectángulo correcto considerando la rotación
             if page.rotation != 0:
-                # Las coordenadas de detección (bbox) en PDFs de imagen suelen corresponder a la vista visual
-                # Transformamos esas coordenadas visuales a UserSpace para dibujar sobre el PDF correctamente
                 mat = page.derotation_matrix
-                rect_vis = fitz.Rect(bbox)
-                target_rect = rect_vis * mat
-                logger.debug(f"Redaction: Visual {bbox} -> User {target_rect} (Rot: {page.rotation})")
+                target_rect = fitz.Rect(bbox) * mat
+            else:
+                target_rect = fitz.Rect(bbox)
+            
+            # fill=None asegura que se borre el texto sin dibujar un cuadrado todavía
+            page.add_redact_annot(target_rect, fill=None)
+
+        # 2. Destruir permanentemente el texto OCR
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+
+        # 3. Dibujar los overlays visuales (tachones o etiquetas) sobre las áreas limpias
+        for match in matches:
+            bbox = match.bbox
+            if page.rotation != 0:
+                mat = page.derotation_matrix
+                target_rect = fitz.Rect(bbox) * mat
             else:
                 target_rect = fitz.Rect(bbox)
 
-            if match.type not in ["MANUAL", "MANUAL_IMAGE"] and self.settings.redaction_strategy == "text_label":
-                self._apply_scanned_text_label(page, target_rect)
-            else:
-                # Usar page.new_shape() para dibujar rectángulos opacos (tachones)
-                # Se aplica a selecciones MANUALES siempre, y a todo lo demás si no es text_label
+            if match.type == "MANUAL_IMAGE":
+                # Las selecciones manuales de imagen siempre llevan tachón opaco
                 shape = page.new_shape()
                 shape.draw_rect(target_rect)
-                shape.finish(
-                    fill=self.settings.redaction_color,
-                    color=self.settings.redaction_color,
-                    width=0
-                )
+                shape.finish(fill=self.settings.redaction_color, color=self.settings.redaction_color, width=0)
                 shape.commit()
+            elif match.type == "MANUAL_TEXT":
+                # Forzar texto independientemente de la estrategia global
+                self._apply_scanned_text_label(page, target_rect)
+            else:
+                if self.settings.redaction_strategy == "text_label":
+                    self._apply_scanned_text_label(page, target_rect)
+                else:
+                    shape = page.new_shape()
+                    shape.draw_rect(target_rect)
+                    shape.finish(fill=self.settings.redaction_color, color=self.settings.redaction_color, width=0)
+                    shape.commit()
 
         logger.info(f"Página escaneada {page.number} anonimizada con anotaciones overlay")
 
@@ -293,6 +305,7 @@ class Anonymizer:
             matches: Matches a redactar
         """
         # Marcar todas las regiones para redacción
+        text_labels_to_draw = []
         for i, match in enumerate(matches, 1):
             bbox = match.bbox
 
@@ -303,22 +316,32 @@ class Anonymizer:
 
             logger.debug(f"  [{i}/{len(matches)}] {match.type}: '{match.text}' | bbox: {bbox}")
 
-            if match.type in ["MANUAL", "MANUAL_IMAGE"]:
+            if match.type == "MANUAL_IMAGE":
                 # Las detecciones de imagen manuales siempre llevan tachón
                 self._apply_black_box(page, bbox)
+            elif match.type == "MANUAL_TEXT":
+                # Forzar texto independientemente de la estrategia global
+                self._apply_text_label(page, bbox)
+                text_labels_to_draw.append(bbox)
             else:
                 if self.settings.redaction_strategy == "black_box":
                     self._apply_black_box(page, bbox)
                 elif self.settings.redaction_strategy == "text_label":
                     self._apply_text_label(page, bbox)
+                    text_labels_to_draw.append(bbox)
                 elif self.settings.redaction_strategy == "pixelate":
                     self._apply_pixelation(page, bbox)
                 elif self.settings.redaction_strategy == "blur":
                     self._apply_blur(page, bbox)
 
-        # Aplicar redacciones (solo para páginas con texto)
+        # Aplicar redacciones destructivas (borra el contenido original de los PDFs)
         logger.info(f"Aplicando {len(matches)} redacciones a página {page.number}")
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+        
+        # Dibujar los textos [ANONIMIZADO] en un paso posterior
+        # Esto evita que PyMuPDF rompa la línea de forma incontrolable
+        for bbox in text_labels_to_draw:
+            self._draw_text_label(page, bbox)
 
     def _apply_black_box(self, page: fitz.Page, bbox: tuple) -> None:
         """
@@ -336,31 +359,50 @@ class Anonymizer:
 
     def _apply_text_label(self, page: fitz.Page, bbox: tuple) -> None:
         """
-        Aplica redacción destructiva con texto genérico '[ANONIMIZADO]'
+        Aplica redacción destructiva (fondo blanco) para vaciar el área.
+        El texto se dibuja a posteriori en _draw_text_label.
         """
         rect = fitz.Rect(bbox)
+        # Relleno blanco para borrar cualquier trazo previo
+        page.add_redact_annot(rect, fill=(1.0, 1.0, 1.0))
         
-        # Calcular tamaño de letra proporcional al alto de la caja
-        height = rect.y1 - rect.y0
-        fontsize = max(5.0, min(11.0, height * 0.65))
+    def _draw_text_label(self, page: fitz.Page, bbox: tuple) -> None:
+        """
+        Dibuja el texto genérico en una sola línea.
+        Expande la caja virtual si la original es demasiado estrecha para evitar saltos.
+        """
+        rect = fitz.Rect(bbox)
+        text = "[ANONIMIZADO]"
         
-        # Marcar región para redacción con relleno blanco y texto negro
-        page.add_redact_annot(
-            rect,
-            text="[ANONIMIZADO]",
-            fontname="helv",
+        # Tamaño de fuente proporcional a la altura de la caja (legible)
+        fontsize = max(5.0, min(10.0, rect.height * 0.7))
+        
+        # Ancho mínimo requerido para evitar saltos de línea (estimación conservadora)
+        min_width = len(text) * (fontsize * 0.55)
+        
+        # Si la caja original es estrecha (ej. ocultando la palabra "DNI"), 
+        # creamos una caja virtual más ancha centrada para que el texto no salte de línea.
+        if rect.width < min_width:
+            diff = (min_width - rect.width) / 2
+            draw_rect = fitz.Rect(rect.x0 - diff, rect.y0, rect.x1 + diff, rect.y1)
+        else:
+            draw_rect = rect
+            
+        page.insert_textbox(
+            draw_rect,
+            text,
             fontsize=fontsize,
-            fill=(1.0, 1.0, 1.0),         # Fondo blanco
-            text_color=(0.0, 0.0, 0.0),   # Texto negro
-            align=1                       # Centrado
+            fontname="helv",
+            color=(0.0, 0.0, 0.0),
+            align=1
         )
 
     def _apply_scanned_text_label(self, page: fitz.Page, rect: fitz.Rect) -> None:
         """
-        Dibuja un rectángulo de fondo y el texto '[ANONIMIZADO]' encima
-        para páginas escaneadas.
+        Dibuja un rectángulo de fondo blanco y el texto en una sola línea
+        para páginas escaneadas o overlays de imagen.
         """
-        # Dibujar fondo blanco
+        # 1. Dibujar fondo blanco (tachón)
         shape = page.new_shape()
         shape.draw_rect(rect)
         shape.finish(
@@ -370,12 +412,20 @@ class Anonymizer:
         )
         shape.commit()
         
-        # Insertar texto
-        height = rect.y1 - rect.y0
-        fontsize = max(5.0, min(11.0, height * 0.65))
+        # 2. Insertar texto expandiendo el área virtual para evitar saltos
+        text = "[ANONIMIZADO]"
+        fontsize = max(5.0, min(10.0, rect.height * 0.7))
+        min_width = len(text) * (fontsize * 0.55)
+        
+        if rect.width < min_width:
+            diff = (min_width - rect.width) / 2
+            draw_rect = fitz.Rect(rect.x0 - diff, rect.y0, rect.x1 + diff, rect.y1)
+        else:
+            draw_rect = rect
+            
         page.insert_textbox(
-            rect,
-            "[ANONIMIZADO]",
+            draw_rect,
+            text,
             fontsize=fontsize,
             fontname="helv",
             color=(0.0, 0.0, 0.0),

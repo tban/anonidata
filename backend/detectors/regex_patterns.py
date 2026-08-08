@@ -24,10 +24,10 @@ class RegexPatterns:
     # Email
     EMAIL_PATTERN = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
 
-    # Teléfono español (varios formatos)
+    # Teléfono español: 9 dígitos empezando por 6, 7, 8 o 9, opcionalmente con prefijo +34 / 0034 / (+34)
+    # Aserciones para evitar sub-coincidencias en números más largos
     PHONE_PATTERNS = [
-        r'\b\+34[\s.-]?[6-9][0-9]{2}[\s.-]?[0-9]{2}[\s.-]?[0-9]{2}[\s.-]?[0-9]{2}\b',  # +34 666 12 34 56
-        r'\b[6-9][0-9]{2}[\s.-]?[0-9]{2,3}[\s.-]?[0-9]{2,3}[\s.-]?[0-9]{2,3}\b',  # 666 123 456, 666-12-34-56
+        r'(?<!\d)(?:(?:\+34|0034|\(\+34\))[\s.-]*)?[6-9](?:[\s.-]*\d){8}(?!\d)'
     ]
 
     # IBAN español

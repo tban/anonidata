@@ -46,6 +46,7 @@ function App() {
   const filesRef = React.useRef<FileItem[]>([]);
   const handleCancelReviewRef = React.useRef<() => Promise<void>>();
   const autoReviewedFilesRef = React.useRef<Set<string>>(new Set());
+  const processedPathsRef = React.useRef<Set<string>>(new Set());
 
   useEffect(() => {
     bulkOcrDecisionRef.current = bulkOcrDecision;
@@ -293,12 +294,20 @@ function App() {
       });
 
       const newFiles = await Promise.all(newFilesPromises);
-      setFiles((prev) => [...prev, ...newFiles]);
-
-      // Detectar tipo de PDF para cada archivo en paralelo
-      newFiles.forEach((file) => {
-        processFilePdfTypeDetection(file);
+      const uniqueNewFiles = newFiles.filter(f => {
+        if (processedPathsRef.current.has(f.path)) return false;
+        processedPathsRef.current.add(f.path);
+        return true;
       });
+
+      if (uniqueNewFiles.length > 0) {
+        setFiles((prev) => [...prev, ...uniqueNewFiles]);
+
+        // Detectar tipo de PDF para cada archivo en paralelo
+        uniqueNewFiles.forEach((file) => {
+          processFilePdfTypeDetection(file);
+        });
+      }
     }
   }, [processFilePdfTypeDetection]);
 
@@ -329,12 +338,20 @@ function App() {
         });
 
         const newFiles = await Promise.all(newFilesPromises);
-        setFiles((prev) => [...prev, ...newFiles]);
-
-        // Detectar tipo de PDF para cada archivo en paralelo
-        newFiles.forEach((file) => {
-          processFilePdfTypeDetection(file);
+        const uniqueNewFiles = newFiles.filter(f => {
+          if (processedPathsRef.current.has(f.path)) return false;
+          processedPathsRef.current.add(f.path);
+          return true;
         });
+
+        if (uniqueNewFiles.length > 0) {
+          setFiles((prev) => [...prev, ...uniqueNewFiles]);
+
+          // Detectar tipo de PDF para cada archivo en paralelo
+          uniqueNewFiles.forEach((file) => {
+            processFilePdfTypeDetection(file);
+          });
+        }
       } catch (err) {
         console.error('Error processing dropped paths:', err);
       }
@@ -435,11 +452,17 @@ function App() {
         };
       });
 
-      if (newFiles.length > 0) {
-        setFiles((prev) => [...prev, ...newFiles]);
+      const uniqueNewFiles = newFiles.filter(f => {
+        if (processedPathsRef.current.has(f.path)) return false;
+        processedPathsRef.current.add(f.path);
+        return true;
+      });
+
+      if (uniqueNewFiles.length > 0) {
+        setFiles((prev) => [...prev, ...uniqueNewFiles]);
 
         // Detectar tipo de PDF para cada archivo en paralelo
-        newFiles.forEach((file) => {
+        uniqueNewFiles.forEach((file) => {
           processFilePdfTypeDetection(file);
         });
       }
@@ -685,6 +708,7 @@ function App() {
       }
     }
     setFiles([]);
+    processedPathsRef.current.clear();
     setProcessResult(null);
     setIsProcessing(false);
     setBulkOcrDecision(null);

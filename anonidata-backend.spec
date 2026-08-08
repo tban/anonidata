@@ -33,6 +33,25 @@ if spacy_model_path and spacy_model_path.exists():
 else:
     print("⚠ Modelo spaCy no encontrado - NER no estará disponible")
 
+# Agregar Tesseract OCR si se copio en la carpeta del backend
+tesseract_local_path = Path('backend/tesseract')
+if tesseract_local_path.exists():
+    datas_list.append((str(tesseract_local_path), 'tesseract'))
+    print("✓ Incluyendo Tesseract OCR en el paquete portable")
+
+# Agregar DLLs de pyzbar (especialmente en Windows para libiconv y libzbar)
+try:
+    import pyzbar
+    pyzbar_path = Path(pyzbar.__file__).parent
+    for dll_path in pyzbar_path.glob("*.dll"):
+        # Copiar a la subcarpeta 'pyzbar' (donde la librería busca libzbar-64.dll)
+        datas_list.append((str(dll_path), 'pyzbar'))
+        # Copiar al directorio raíz '.' (para que Windows encuentre libiconv.dll al cargar libzbar-64.dll)
+        datas_list.append((str(dll_path), '.'))
+        print(f"✓ Incluyendo DLL de pyzbar en raíz y subcarpeta: {dll_path.name}")
+except Exception as e:
+    print(f"⚠ No se pudieron incluir DLLs de pyzbar: {e}")
+
 print("✓ Incluyendo configuración desde: backend/config")
 
 a = Analysis(

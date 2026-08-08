@@ -26,10 +26,14 @@ if images:
     for i, img in enumerate(images):
         xref = img[0]
         try:
-            img_rect = page.get_image_bbox(xref)
-            print(f"  Imagen {i}: {img_rect}")
-        except:
-            print(f"  Imagen {i}: No se pudo obtener bbox")
+            rects = page.get_image_rects(xref)
+            if rects:
+                img_rect = rects[0]
+                print(f"  Imagen {i}: {img_rect}")
+            else:
+                print(f"  Imagen {i}: No se dibujó en la página")
+        except Exception as e:
+            print(f"  Imagen {i}: No se pudo obtener rect: {e}")
 
 # Añadir varias anotaciones de prueba en diferentes posiciones
 print("\nAñadiendo anotaciones de cuadrado...")

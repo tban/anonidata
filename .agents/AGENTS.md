@@ -28,3 +28,8 @@ Cuando el usuario pida ejecutar el flujo "COMPILA BUILD", debes realizar estrict
    - Extraer el `.exe` desde la máquina virtual (conectándote por SMB).
    - Crear la Release de GitHub y adjuntar ambos instaladores (`.dmg` de Mac y `.exe` de Windows).
    - Hacer commit de los cambios (archivos de versión como `version.json` y cualquier otro código nuevo) y subirlo a la rama `main` de GitHub. Hacer esto al final garantiza que los usuarios no descarguen el nuevo `version.json` antes de que los ejecutables estén subidos a la release.
+
+# Flujo "COMPILA LOCAL"
+Cuando el usuario pida ejecutar el flujo "COMPILA LOCAL", debes realizar estrictamente los siguientes pasos:
+1. **Compilar el backend localmente**: Ejecuta `npm run build:backend`.
+2. **Lanzar el aplicativo en modo desarrollo**: Una vez que termine la compilación del backend, ejecuta `npm run dev` (que internamente ejecuta Tauri en modo de desarrollo) para que el usuario pueda probar el aplicativo. Asegúrate de dejar el proceso corriendo en segundo plano o de notificar al usuario que la app está abierta.

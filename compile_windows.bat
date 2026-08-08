@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+cd /d "%~dp0"
 
 if "%~1"=="--env-loaded" goto :build
 
@@ -60,24 +61,84 @@ if defined VCToolsInstallDir (
 )
 
 echo 2. Instalando dependencias de Node...
-call npm install
-if %errorlevel% neq 0 exit /b %errorlevel%
+if exist package-lock.json (
+    echo [INFO] Eliminando package-lock.json para evitar conflictos de permisos de red...
+    del /f /q package-lock.json
+)
+call npm install --no-package-lock
+if %errorlevel% neq 0 (
+    echo [ERROR] Fallo al instalar las dependencias de Node.
+    pause
+    exit /b %errorlevel%
+)
 
 echo 3. Creando entorno virtual de Python...
-python -m venv venv
+set PYTHON_CMD=python
+
+py -3.13 -c "import sys" >nul 2>&1
+if !errorlevel! equ 0 (
+    set PYTHON_CMD=py -3.13
+    echo [INFO] Detectado Python 3.13 estable. Usando para el entorno virtual.
+) else (
+    py -3.12 -c "import sys" >nul 2>&1
+    if !errorlevel! equ 0 (
+        set PYTHON_CMD=py -3.12
+        echo [INFO] Detectado Python 3.12 estable. Usando para el entorno virtual.
+    ) else (
+        echo [WARNING] No se detecto Python 3.13 o 3.12 especifico. Usando python por defecto.
+    )
+)
+
+!PYTHON_CMD! -m venv venv
+if !errorlevel! neq 0 (
+    echo [ERROR] Fallo al crear el entorno virtual de Python.
+    pause
+    exit /b !errorlevel!
+)
 
 echo 4. Activando entorno e instalando requerimientos...
 call venv\Scripts\activate.bat
+if %errorlevel% neq 0 (
+    echo [ERROR] Fallo al activar el entorno virtual de Python.
+    pause
+    exit /b %errorlevel%
+)
+
 call pip install -r backend\requirements.txt
+if %errorlevel% neq 0 (
+    echo [ERROR] Fallo al instalar los requerimientos de Python.
+    pause
+    exit /b %errorlevel%
+)
+
 call python -m spacy download es_core_news_sm
+if %errorlevel% neq 0 (
+    echo [ERROR] Fallo al descargar el modelo de spacy en espanol.
+    pause
+    exit /b %errorlevel%
+)
+
+echo 5. Copiando Tesseract OCR local para integracion portable...
+if exist "C:\Program Files\Tesseract-OCR" (
+    echo [INFO] Detectado Tesseract local en C:\Program Files\Tesseract-OCR. Preparando bundle...
+    if not exist "backend\tesseract" mkdir "backend\tesseract"
+    xcopy /E /I /Y "C:\Program Files\Tesseract-OCR" "backend\tesseract" >nul
+) else (
+    echo [WARNING] No se encontro Tesseract en C:\Program Files\Tesseract-OCR. El instalador final NO tendra OCR integrado.
+)
 
 echo.
 echo ==================================================
-echo   INICIANDO ORQUESTADOR DE LANZAMIENTO (RELEASE)
+echo   INICIANDO ORQUESTADOR DE LANZAMIENTO [RELEASE]
 echo ==================================================
 echo.
 call npm run release
+if %errorlevel% neq 0 (
+    echo [ERROR] Fallo al compilar o empaquetar la aplicacion.
+    pause
+    exit /b %errorlevel%
+)
 
 echo.
-echo Proceso completado. El archivo EXE deberia estar en tu escritorio (o donde apuntara FINAL_DEST_DIR).
+echo Proceso completado. El archivo EXE deberia estar en tu escritorio [o donde apuntara FINAL_DEST_DIR].
 pause

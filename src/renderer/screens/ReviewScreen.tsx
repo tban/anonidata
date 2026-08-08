@@ -160,7 +160,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({
     setPendingManualBbox(bbox)
     setRangeStartPage(currentPage)
     setRangeEndPage(currentPage)
-    setManualType('MANUAL_IMAGE') // Default to image/stamp to be safe
+    setManualType(localStrategy === 'text_label' ? 'MANUAL_TEXT' : 'MANUAL_IMAGE')
   }
 
   const confirmManualDetection = async () => {

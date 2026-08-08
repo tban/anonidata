@@ -18,8 +18,8 @@ except ImportError:
 
 try:
     from pyzbar import pyzbar
-except ImportError:
-    logger.warning("pyzbar no instalado")
+except Exception as e:
+    logger.warning(f"pyzbar no pudo iniciarse, se desactivara la deteccion de codigos QR/barras: {e}")
     pyzbar = None
 
 from core.config import Settings

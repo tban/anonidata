@@ -8,7 +8,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from detectors.pii_detector import PIIDetector
 from core.config import Settings
-from core.pdf_processor import extract_text_with_structure
 import fitz  # PyMuPDF
 
 def test_pdf(pdf_path: str, description: str):

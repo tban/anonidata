@@ -656,7 +656,7 @@ app.on('ready', () => {
                 }
 
                 if (response.success && response.results && response.results.length > 0) {
-                  resolve(response.results[0].type); // Retornar solo 'text' o 'image'
+                  resolve(response.results[0]); // Retornar el objeto completo para consistencia con Tauri
                 } else if (!response.success) {
                   // Si falló backend, retornamos error o default? 
                   // Mejor reject para manejar fallback en frontend si se quiere

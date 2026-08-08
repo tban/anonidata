@@ -17,7 +17,7 @@ es_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/es
 
 # --- Visión (firmas, QR) ---
 opencv-python-headless==4.11.0.86
-numpy==1.26.4
+numpy>=1.26.4
 pyzbar==0.1.9
 
 # --- Configuración y utilidades ---

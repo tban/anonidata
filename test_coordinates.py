@@ -31,18 +31,22 @@ def test_coordinates(pdf_path):
         for i, img in enumerate(images):
             xref = img[0]
             try:
-                img_rect = page.get_image_bbox(xref)
-                print(f"\nImagen {i+1}:")
-                print(f"  BBox: {img_rect}")
-                print(f"  Dimensiones: {img_rect.width} x {img_rect.height}")
-                print(f"  Posición: ({img_rect.x0}, {img_rect.y0})")
+                rects = page.get_image_rects(xref)
+                if rects:
+                    img_rect = rects[0]
+                    print(f"\nImagen {i+1}:")
+                    print(f"  BBox: {img_rect}")
+                    print(f"  Dimensiones: {img_rect.width} x {img_rect.height}")
+                    print(f"  Posición: ({img_rect.x0}, {img_rect.y0})")
 
-                # Obtener información de la imagen
-                img_dict = doc.extract_image(xref)
-                if img_dict:
-                    print(f"  Resolución: {img_dict.get('width')} x {img_dict.get('height')} píxeles")
-                    print(f"  DPI aproximado X: {img_dict.get('width') / img_rect.width * 72:.1f}")
-                    print(f"  DPI aproximado Y: {img_dict.get('height') / img_rect.height * 72:.1f}")
+                    # Obtener información de la imagen
+                    img_dict = doc.extract_image(xref)
+                    if img_dict:
+                        print(f"  Resolución: {img_dict.get('width')} x {img_dict.get('height')} píxeles")
+                        print(f"  DPI aproximado X: {img_dict.get('width') / img_rect.width * 72:.1f}")
+                        print(f"  DPI aproximado Y: {img_dict.get('height') / img_rect.height * 72:.1f}")
+                else:
+                    print(f"\nImagen {i+1}: No se dibujó en la página")
             except Exception as e:
                 print(f"  Error obteniendo info: {e}")
 

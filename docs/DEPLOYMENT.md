@@ -92,25 +92,32 @@ xcrun stapler validate release/AnoniData-1.0.0-universal.dmg
 
 ---
 
-## Windows
+## Windows (Compilación desde macOS usando Máquina Virtual ARM64)
 
-### Requisitos
+Para compilar y empaquetar la versión de Windows de forma automatizada mediante una máquina virtual Windows ARM64 conectada por SMB (sin necesidad de permisos de administrador):
 
-- Windows 10/11
-- Node.js 18+
-- Python 3.11+
-- (Opcional) Certificado de firma de código
+### Flujo de Compilación y Publicación
 
-### Build
+Ejecuta los siguientes pasos:
 
-```bash
-npm run build
-npm run package:win
-```
+1. **Sincronizar el código local con la VM** (desde la terminal de macOS):
+   ```bash
+   npm run sync:windows
+   ```
+   *(Copia los cambios de tu repositorio local de macOS a la carpeta compartida con la VM).*
 
-Genera:
-- `AnoniData-Setup-1.0.0.exe` (instalador NSIS)
-- `AnoniData-1.0.0.exe` (portable)
+2. **Compilar en la máquina virtual** (dentro de la VM de Windows):
+   Abre una consola cmd/terminal en la VM, navega al directorio del proyecto y ejecuta:
+   ```cmd
+   compile_windows.bat
+   ```
+   *(Compila el backend de Python con PyInstaller y empaqueta la aplicación Tauri en un instalador NSIS).*
+
+3. **Publicar el ejecutable en Google Drive** (desde la terminal de macOS):
+   ```bash
+   npm run publish:windows
+   ```
+   *(Se conecta por SMB a la VM, extrae el instalador final desde `dist/windows` y lo copia directamente sobre `/PUBLICAPPS/ANONIDATA/anonidata.exe` para conservar el ID de compartición de Google Drive).*
 
 ### Firma de Código (Opcional)
 

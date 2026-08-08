@@ -5,6 +5,27 @@ use tauri::State;
 use crate::{AppState, get_settings};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(windows)]
+fn safe_path(path: &str) -> String {
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        let p_str = p.to_string_lossy();
+        if !p_str.starts_with("\\\\?\\") && !p_str.starts_with("\\\\.\\") {
+            if p_str.starts_with("\\\\") {
+                return format!("\\\\?\\UNC\\{}", &p_str[2..]);
+            } else {
+                return format!("\\\\?\\{}", p_str);
+            }
+        }
+    }
+    path.to_string()
+}
+
+#[cfg(not(windows))]
+fn safe_path(path: &str) -> String {
+    path.to_string()
+}
+
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 // Helper to write request to sidecar stdin and wait for response on sidecar stdout channel
@@ -62,9 +83,10 @@ pub async fn anonymize(
     options: Option<Value>,
 ) -> Result<Value, String> {
     let settings = get_settings(&app);
+    let safe_files: Vec<String> = files.into_iter().map(|p| safe_path(&p)).collect();
     let request = json!({
         "action": "anonymize",
-        "files": files,
+        "files": safe_files,
         "settings": settings,
         "options": options.unwrap_or_else(|| json!({}))
     });
@@ -81,7 +103,7 @@ pub async fn detect_only(
     let settings = get_settings(&app);
     let request = json!({
         "action": "detect_only",
-        "file": file_path,
+        "file": safe_path(&file_path),
         "settings": settings,
         "options": options.unwrap_or_else(|| json!({}))
     });
@@ -106,8 +128,8 @@ pub async fn finalize_anonymization(
         
     let request = json!({
         "action": "finalize_anonymization",
-        "originalFile": original_file,
-        "detectionsPath": detections_path,
+        "originalFile": safe_path(&original_file),
+        "detectionsPath": safe_path(&detections_path),
         "approvedIndices": approved_indices,
         "isImagePdf": is_image_pdf,
         "settings": settings
@@ -122,7 +144,7 @@ pub async fn check_pdf_type(
 ) -> Result<Value, String> {
     let request = json!({
         "action": "check_pdf_type",
-        "files": vec![path]
+        "files": vec![safe_path(&path)]
     });
     let response = send_sidecar_request(state, request, Duration::from_secs(30)).await?;
     
@@ -136,14 +158,14 @@ pub async fn check_pdf_type(
 
 #[tauri::command]
 pub fn read_pdf_file(path: String) -> Result<tauri::ipc::Response, String> {
-    std::fs::read(path)
+    std::fs::read(safe_path(&path))
         .map(|bytes| tauri::ipc::Response::new(bytes))
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_file(path: String) -> Result<bool, String> {
-    match std::fs::remove_file(path) {
+    match std::fs::remove_file(safe_path(&path)) {
         Ok(_) => Ok(true),
         Err(e) => {
             log::error!("Failed to delete file: {}", e);
@@ -154,7 +176,7 @@ pub fn delete_file(path: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn load_detections(path: String) -> Result<Value, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let content = std::fs::read_to_string(safe_path(&path)).map_err(|e| e.to_string())?;
     let detections_json: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
     Ok(json!({
         "success": true,
@@ -164,7 +186,7 @@ pub fn load_detections(path: String) -> Result<Value, String> {
 
 #[tauri::command]
 pub fn save_detections(path: String, detections: Value) -> Result<bool, String> {
-    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    let file = std::fs::File::create(safe_path(&path)).map_err(|e| e.to_string())?;
     serde_json::to_writer_pretty(file, &detections).map_err(|e| e.to_string())?;
     Ok(true)
 }
@@ -182,7 +204,7 @@ pub async fn apply_ocr(
 ) -> Result<Value, String> {
     let request = json!({
         "action": "apply_ocr",
-        "file": path,
+        "file": safe_path(&path),
         "language": language
     });
     send_sidecar_request(state, request, Duration::from_secs(600)).await
@@ -211,7 +233,7 @@ pub async fn restart_backend(
 
 #[tauri::command]
 pub fn get_file_size(path: String) -> Result<u64, String> {
-    let metadata = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    let metadata = std::fs::metadata(safe_path(&path)).map_err(|e| e.to_string())?;
     Ok(metadata.len())
 }
 

@@ -32,7 +32,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null)
-  const [numPages, setNumPages] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -61,7 +60,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
 
         if (!cancelled) {
           setPdfDoc(doc)
-          setNumPages(doc.numPages)
           onDocumentLoaded?.(doc)
         }
       } catch (err) {
@@ -175,11 +173,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
   return (
     <div className="relative">
       <canvas ref={canvasRef} className="border-2 border-gray-300 rounded-lg shadow-xl" />
-      {numPages > 1 && (
-        <div className="absolute bottom-3 right-3 glass-dark text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-lg backdrop-blur-md">
-          Página {pageNumber} de {numPages}
-        </div>
-      )}
     </div>
   )
 }

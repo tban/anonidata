@@ -32,7 +32,7 @@ export interface AnoniDataAPI {
     openExternal: (url: string) => Promise<void>;
     deleteFile: (filePath: string) => Promise<boolean>;
     readPdfFile: (filePath: string) => Promise<ArrayBuffer>;
-    checkPdfType: (filePath: string) => Promise<'text' | 'image'>;
+    checkPdfType: (filePath: string) => Promise<{ type: 'text' | 'image'; pages?: number }>;
   };
   updater: {
     checkForUpdates: () => Promise<UpdateInfo>;

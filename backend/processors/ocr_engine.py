@@ -56,13 +56,33 @@ class OCREngine:
 
         # Verificar Tesseract
         if pytesseract:
-            # En macOS (app empaquetada), el PATH puede no incluir homebrew
-            tesseract_path = shutil.which("tesseract")
-            if not tesseract_path and sys.platform == "darwin":
-                for path in ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"]:
-                    if os.path.exists(path):
-                        tesseract_path = path
-                        break
+            # 1. Comprobar si Tesseract está empaquetado como recurso (portable)
+            tesseract_path = None
+            if hasattr(sys, '_MEIPASS'):
+                bundled_tesseract = os.path.join(sys._MEIPASS, 'tesseract', 'tesseract.exe')
+                if os.path.exists(bundled_tesseract):
+                    tesseract_path = bundled_tesseract
+                    # Configurar TESSDATA_PREFIX para apuntar a la carpeta de idiomas portada directamente
+                    os.environ['TESSDATA_PREFIX'] = os.path.join(sys._MEIPASS, 'tesseract', 'tessdata')
+            
+            # 2. Si no es portable, buscar en el PATH o en las rutas por defecto
+            if not tesseract_path:
+                tesseract_path = shutil.which("tesseract")
+                if not tesseract_path:
+                    if sys.platform == "darwin":
+                        for path in ["/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract"]:
+                            if os.path.exists(path):
+                                tesseract_path = path
+                                break
+                    elif sys.platform == "win32":
+                        for path in [
+                            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+                            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe")
+                        ]:
+                            if os.path.exists(path):
+                                tesseract_path = path
+                                break
             
             if tesseract_path:
                 pytesseract.pytesseract.tesseract_cmd = tesseract_path
