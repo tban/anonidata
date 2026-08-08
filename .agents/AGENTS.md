@@ -17,3 +17,14 @@
 
 # Reglas de Testeo
 - **Validación pre-publicación**: Antes de subir nueva versión recuerda siempre que debes hacer el siguiente test con la versión a publicar: Lanzar el aplicativo en local, procesar el archivo `/Users/tban/Library/CloudStorage/Box-Box/ACCESO PUBLICO/plantilla_prueba_datos_personales_v2_anonimizado.pdf` y analizar el resultado (% de aciertos con respecto a la versión anterior, advertencia si ha bajado, etc.)
+
+# Flujo "COMPILA BUILD"
+Cuando el usuario pida ejecutar el flujo "COMPILA BUILD", debes realizar estrictamente los siguientes pasos en orden:
+1. **Incrementar versión**: Sube la versión (patch) en `package.json`, `src-tauri/tauri.conf.json` y `src-tauri/Cargo.toml`.
+2. **Sincronizar código a la VM Windows**: Ejecuta el script `./scripts/sync-to-windows.sh` para copiar el código fresco a la máquina virtual y que el usuario empiece a compilar allí.
+3. **Compilar versión Mac**: Ejecuta localmente `npm run build:backend && npm run build` para compilar la nueva versión en segundo plano.
+4. **Pausa y Cartel**: Muestra un mensaje al usuario con un cartelito muy grande (usando Markdown headers o ASCII art) indicando que la compilación de Mac está en marcha/terminada y que **ESTÁS ESPERANDO A QUE EL USUARIO COMPILE WINDOWS**.
+5. **Publicación y Versionado**: Solo **después** de que el usuario te avise de que ha terminado de compilar en Windows, debes:
+   - Extraer el `.exe` desde la máquina virtual (conectándote por SMB).
+   - Crear la Release de GitHub y adjuntar ambos instaladores (`.dmg` de Mac y `.exe` de Windows).
+   - Hacer commit de los cambios (archivos de versión como `version.json` y cualquier otro código nuevo) y subirlo a la rama `main` de GitHub. Hacer esto al final garantiza que los usuarios no descarguen el nuevo `version.json` antes de que los ejecutables estén subidos a la release.
