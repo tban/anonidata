@@ -120,6 +120,7 @@ pub async fn finalize_anonymization(
     options: Option<Value>,
 ) -> Result<Value, String> {
     let settings = get_settings(&app);
+        
     let is_image_pdf = options
         .as_ref()
         .and_then(|o| o.get("isImagePdf"))
@@ -132,6 +133,7 @@ pub async fn finalize_anonymization(
         "detectionsPath": safe_path(&detections_path),
         "approvedIndices": approved_indices,
         "isImagePdf": is_image_pdf,
+        "options": options,
         "settings": settings
     });
     send_sidecar_request(state, request, Duration::from_secs(300)).await
