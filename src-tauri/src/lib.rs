@@ -3,7 +3,6 @@ use serde_json::{Value, json};
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem};
 
 pub mod commands;
 pub mod updater;
@@ -105,31 +104,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .setup(|app| {
-            {
-                // Build the native menu
-                let about_item = MenuItemBuilder::new("Acerca de AnoniData")
-                    .id("show-about-modal")
-                    .build(app)?;
 
-                let check_updates_item = MenuItemBuilder::new("Buscar actualizaciones")
-                    .id("check-updates")
-                    .build(app)?;
-
-                let quit_item = PredefinedMenuItem::quit(app, Some("Salir"))?;
-
-                let app_submenu = SubmenuBuilder::new(app, "AnoniData")
-                    .item(&about_item)
-                    .item(&check_updates_item)
-                    .separator()
-                    .item(&quit_item)
-                    .build()?;
-
-                let menu = MenuBuilder::new(app)
-                    .item(&app_submenu)
-                    .build()?;
-
-                app.set_menu(menu)?;
-            }
 
             // Spawn the Python sidecar on app startup
             let controller = spawn_sidecar(app.handle())?;
@@ -139,22 +114,30 @@ pub fn run() {
                 controller: Mutex::new(Some(controller))
             });
 
-            // Start check for updates in the background
-            updater::check_for_updates_in_background(app.handle().clone());
+            // Start check for updates in the background if enabled in settings
+            let mut auto_check = true;
+            if let Ok(config_dir) = app.path().app_config_dir() {
+                let path = config_dir.join("settings.json");
+                if path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if let Some(app_settings) = json.get("app_settings") {
+                                if let Some(auto_check_setting) = app_settings.get("autoCheckUpdates").and_then(|v| v.as_bool()) {
+                                    auto_check = auto_check_setting;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if auto_check {
+                updater::check_for_updates_in_background(app.handle().clone());
+            }
 
             Ok(())
         })
-        .on_menu_event(|app, event| {
-            match event.id().as_ref() {
-                "show-about-modal" => {
-                    let _ = app.emit("show-about-modal", ());
-                }
-                "check-updates" => {
-                    updater::check_for_updates_manual(app.clone());
-                }
-                _ => {}
-            }
-        })
+
         .invoke_handler(tauri::generate_handler![
             commands::anonymize,
             commands::detect_only,
