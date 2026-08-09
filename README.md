@@ -5,6 +5,7 @@ AnoniData es una herramienta de escritorio basada en **Tauri, React, Rust y Pyth
 ## Características
 
 - ✅ Procesamiento 100% local (sin conexión a internet)
+- ✅ **Conversión OCR Inteligente**: Capacidad para detectar, leer y anonimizar documentos o imágenes escaneadas mediante reconocimiento óptico de caracteres automático.
 - ✅ Detección automática de datos personales:
   - DNI/NIE españoles
   - Nombres propios
@@ -17,7 +18,7 @@ AnoniData es una herramienta de escritorio basada en **Tauri, React, Rust y Pyth
 - ✅ Procesamiento batch
 - ✅ Multiplataforma: Windows, macOS (Intel + Apple Silicon)
 - ✅ Zero data retention
-- ✅ Logs sanitizados
+- ✅ Capacidad OCR (Reconocimiento Óptico de Caracteres)
 
 ## Tecnologías
 
