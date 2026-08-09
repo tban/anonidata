@@ -3,7 +3,6 @@ use serde_json::{Value, json};
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-#[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder, PredefinedMenuItem};
 
 pub mod commands;
@@ -106,7 +105,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .setup(|app| {
-            #[cfg(target_os = "macos")]
             {
                 // Build the native menu
                 let about_item = MenuItemBuilder::new("Acerca de AnoniData")

@@ -75,7 +75,7 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let version_url_with_cache_buster = format!("{}&t={}", VERSION_JSON_URL, timestamp);
+    let version_url_with_cache_buster = format!("{}?t={}", VERSION_JSON_URL, timestamp);
 
     let response = client.get(&version_url_with_cache_buster)
         .header(reqwest::header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
@@ -155,7 +155,7 @@ fn run_updater_sync(app: &AppHandle, manual: bool) -> Result<(), String> {
     log::info!("New version available: {}.", target_version);
 
     // Replace {VERSION} template in URL if present
-    let mut download_url = platform_info.url.replace("{VERSION}", target_version);
+    let download_url = platform_info.url.replace("{VERSION}", target_version);
 
 
     let filename = &platform_info.filename;
