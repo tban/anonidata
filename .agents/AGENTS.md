@@ -16,7 +16,15 @@
 - **Sintaxis Batch (CMD)**: Evita usar siempre paréntesis `()` dentro de los comandos `echo` en un bloque `if ( ... )`. El intérprete Batch los confunde con el cierre del bloque y provoca errores de sintaxis (ej. `No se esperaba : en este momento.`). Utiliza corchetes `[]` en su lugar.
 
 # Reglas de Testeo
-- **Validación pre-publicación**: Antes de subir nueva versión recuerda siempre que debes hacer el siguiente test con la versión a publicar: Lanzar el aplicativo en local, procesar el archivo `/Users/tban/Library/CloudStorage/Box-Box/ACCESO PUBLICO/plantilla_prueba_datos_personales_v2_anonimizado.pdf` y analizar el resultado (% de aciertos con respecto a la versión anterior, advertencia si ha bajado, etc.)
+- **Comando TEST**: Cuando el usuario pida ejecutar "TEST", debes procesar automáticamente (mediante el script `backend/scripts/run_test_suite.py` o similar) las plantillas v1, v2 y v3 ubicadas en `/Users/tban/Library/CloudStorage/GoogleDrive-tbanrguez@gmail.com/Mi unidad/PUBLICAPPS/ANONIDATA/TEST/`.
+- **Cálculo de Aciertos**: Debes calcular el % de aciertos usando los siguientes totales de referencia comprobados (Total: 284 datos):
+  - **v1**: 56 datos (Nombres:13, DNI:6, Tel:4, Dir:4, Firma:5, FechaNac:4, NSS:3, Email:4, IBAN:1, Matrícula:1, Colegiado:4, Salud:3, Sindicato:2, Categoría:1, Antigüedad:1)
+  - **v2**: 94 datos (Nombres:19, DNI:10, Tel:10, Dir:5, Firma:6, FechaNac:8, NSS:7, Email:4, IBAN:2, Matrícula:4, Colegiado:4, Salud:4, Sindicato:3, NIE:2, Edad:1, Categoría:1, Antigüedad:1, Geoloc:1, Tarjeta:1, Pasaporte:1)
+  - **v3**: 134 datos (Nombres:32, DNI:16, Tel:13, Dir:11, Firma:10, FechaNac:9, NSS:7, Email:5, IBAN:5, Matrícula:5, Colegiado:4, Salud:4, Sindicato:3, NIE:2, Edad:1, Categoría:1, Antigüedad:1, Geoloc:1, Tarjeta:1, Pasaporte:1, Infracción penal:1, TIP:1)
+- **Histórico y Presentación del Resultado**: 
+  - Tras cada test, guarda el histórico en el archivo `.agents/test_history.json` registrando la fecha, versión, total de detecciones por plantilla, % de aciertos globales y desglose.
+  - Informa al usuario del resultado con un bloque destacado (`> [!NOTE]`) comparando con la **versión anterior** del historial (mostrando % de aciertos y diferencias en detecciones).
+- **Verificación Posterior**: Debes analizar los archivos anonimizados generados para asegurar que no contienen metadatos y que los datos personales (284) ya no son accesibles, asegurando también que no se hayan anonimizado por error los casos de control (CIF, códigos QR/CSV, sellos institucionales, hashes SHA-256).
 
 # Flujo "COMPILA BUILD"
 Cuando el usuario pida ejecutar el flujo "COMPILA BUILD", debes realizar estrictamente los siguientes pasos en orden:
