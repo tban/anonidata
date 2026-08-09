@@ -214,11 +214,13 @@ class Anonymizer:
         Returns:
             True si es página escaneada, False si tiene texto nativo
         """
-        # Obtener lista de imágenes
-        image_list = page.get_images(full=True)
+        # Extraer texto de la página. Si tiene suficiente texto, es un Searchable PDF o PDF nativo.
+        text_len = len(page.get_text("text").strip())
+        if text_len > 100:
+            return False  # Tiene texto, se procesa conservando la capa de texto
 
-        # Si tiene imágenes grandes (>40% de la página), tratarla como escaneada
-        # No importa si tiene texto OCR embebido
+        # Si no tiene texto y tiene imágenes grandes (>40% de la página), tratarla como escaneada pura
+        image_list = page.get_images(full=True)
         if len(image_list) > 0:
             page_area = page.rect.width * page.rect.height
             for img in image_list:
@@ -229,12 +231,26 @@ class Anonymizer:
                         img_rect = img_rects[0]
                         img_area = (img_rect.x1 - img_rect.x0) * (img_rect.y1 - img_rect.y0)
                         if img_area > page_area * 0.4:
-                            logger.debug(f"Página tiene imagen grande que cubre {img_area/page_area*100:.1f}% del área")
                             return True
-                except:
+                except Exception:
                     pass
-
         return False
+
+    def _merge_boxes(self, boxes: list, x_tol: float = 12.0, y_tol: float = 5.0) -> list:
+        if not boxes: return []
+        boxes.sort(key=lambda b: (b[1], b[0]))
+        merged = []
+        curr = list(boxes[0])
+        for b in boxes[1:]:
+            same_line = abs(curr[1] - b[1]) <= y_tol and abs(curr[3] - b[3]) <= y_tol
+            adjacent_x = (b[0] - curr[2]) <= x_tol and (curr[0] - b[2]) <= x_tol
+            if same_line and adjacent_x:
+                curr = [min(curr[0], b[0]), min(curr[1], b[1]), max(curr[2], b[2]), max(curr[3], b[3])]
+            else:
+                merged.append(tuple(curr))
+                curr = list(b)
+        merged.append(tuple(curr))
+        return merged
 
     def _anonymize_scanned_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
         """
@@ -253,6 +269,8 @@ class Anonymizer:
         page_height = page_rect.height
 
         # 1. Marcar áreas para destruir el texto subyacente (OCR)
+        # Separar boxes de texto para fusionarlas y evitar solapamiento de [ANONIMIZADO]
+        boxes_text = []
         for match in matches:
             bbox = match.bbox
             if page.rotation != 0:
@@ -261,40 +279,33 @@ class Anonymizer:
             else:
                 target_rect = fitz.Rect(bbox)
             
-            # fill=None asegura que se borre el texto sin dibujar un cuadrado todavía
-            page.add_redact_annot(target_rect, fill=None)
-
-        # 2. Destruir permanentemente el texto OCR
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-
-        # 3. Dibujar los overlays visuales (tachones o etiquetas) sobre las áreas limpias
-        for match in matches:
-            bbox = match.bbox
-            if page.rotation != 0:
-                mat = page.derotation_matrix
-                target_rect = fitz.Rect(bbox) * mat
-            else:
-                target_rect = fitz.Rect(bbox)
-
             if match.type == "MANUAL_IMAGE":
-                # Las selecciones manuales de imagen siempre llevan tachón opaco
-                shape = page.new_shape()
-                shape.draw_rect(target_rect)
-                shape.finish(fill=self.settings.redaction_color, color=self.settings.redaction_color, width=0)
-                shape.commit()
+                page.add_redact_annot(target_rect, fill=self.settings.redaction_color)
             elif match.type == "MANUAL_TEXT":
-                # Forzar texto independientemente de la estrategia global
-                self._apply_scanned_text_label(page, target_rect)
+                boxes_text.append(target_rect)
             else:
                 if self.settings.redaction_strategy == "text_label":
-                    self._apply_scanned_text_label(page, target_rect)
+                    boxes_text.append(target_rect)
                 else:
-                    shape = page.new_shape()
-                    shape.draw_rect(target_rect)
-                    shape.finish(fill=self.settings.redaction_color, color=self.settings.redaction_color, width=0)
-                    shape.commit()
+                    page.add_redact_annot(target_rect, fill=self.settings.redaction_color)
 
-        logger.info(f"Página escaneada {page.number} anonimizada con anotaciones overlay")
+        merged_text_boxes = self._merge_boxes([(r.x0, r.y0, r.x1, r.y1) for r in boxes_text])
+        for bbox in merged_text_boxes:
+            rect = fitz.Rect(bbox)
+            page.add_redact_annot(
+                rect,
+                text="[ANONIMIZADO]",
+                fill=(1.0, 1.0, 1.0),
+                text_color=(1.0, 0.0, 0.0),
+                fontsize=max(5.0, min(10.0, rect.height * 0.7)),
+                fontname="helv",
+                align=1
+            )
+
+        # 2. Destruir permanentemente el texto OCR y quemar el texto [ANONIMIZADO]
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+
+        logger.info(f"Página escaneada {page.number} anonimizada")
 
     def _anonymize_text_page(self, page: fitz.Page, matches: List[PIIMatch]) -> None:
         """
@@ -305,11 +316,13 @@ class Anonymizer:
             matches: Matches a redactar
         """
         # Marcar todas las regiones para redacción
-        text_labels_to_draw = []
+        boxes_text = []
+        boxes_black = []
+        boxes_pixelate = []
+        boxes_blur = []
+        
         for i, match in enumerate(matches, 1):
             bbox = match.bbox
-
-            # Ajustar la caja ligeramente para evitar recortar letras de palabras adyacentes
             x0, y0, x1, y1 = bbox
             if x1 - x0 > 4:
                 bbox = (x0 + 1.5, y0, x1 - 1.5, y1)
@@ -317,31 +330,45 @@ class Anonymizer:
             logger.debug(f"  [{i}/{len(matches)}] {match.type}: '{match.text}' | bbox: {bbox}")
 
             if match.type == "MANUAL_IMAGE":
-                # Las detecciones de imagen manuales siempre llevan tachón
-                self._apply_black_box(page, bbox)
+                boxes_black.append(bbox)
             elif match.type == "MANUAL_TEXT":
-                # Forzar texto independientemente de la estrategia global
-                self._apply_text_label(page, bbox)
-                text_labels_to_draw.append(bbox)
+                boxes_text.append(bbox)
             else:
                 if self.settings.redaction_strategy == "black_box":
-                    self._apply_black_box(page, bbox)
+                    boxes_black.append(bbox)
                 elif self.settings.redaction_strategy == "text_label":
-                    self._apply_text_label(page, bbox)
-                    text_labels_to_draw.append(bbox)
+                    boxes_text.append(bbox)
                 elif self.settings.redaction_strategy == "pixelate":
-                    self._apply_pixelation(page, bbox)
+                    boxes_pixelate.append(bbox)
                 elif self.settings.redaction_strategy == "blur":
-                    self._apply_blur(page, bbox)
+                    boxes_blur.append(bbox)
+                    
+        # Apply standard redact annotations
+        for bbox in boxes_black:
+            self._apply_black_box(page, bbox)
+            
+        merged_text_boxes = self._merge_boxes(boxes_text)
+        for bbox in merged_text_boxes:
+            rect = fitz.Rect(bbox)
+            page.add_redact_annot(
+                rect,
+                text="[ANONIMIZADO]",
+                fill=(1.0, 1.0, 1.0),
+                text_color=(1.0, 0.0, 0.0),
+                fontsize=max(5.0, min(10.0, rect.height * 0.7)),
+                fontname="helv",
+                align=1
+            )
+            
+        for bbox in boxes_pixelate:
+            self._apply_pixelation(page, bbox)
+            
+        for bbox in boxes_blur:
+            self._apply_blur(page, bbox)
 
-        # Aplicar redacciones destructivas (borra el contenido original de los PDFs)
+        # Aplicar redacciones destructivas (borra el contenido original y quema el texto [ANONIMIZADO])
         logger.info(f"Aplicando {len(matches)} redacciones a página {page.number}")
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-        
-        # Dibujar los textos [ANONIMIZADO] en un paso posterior
-        # Esto evita que PyMuPDF rompa la línea de forma incontrolable
-        for bbox in text_labels_to_draw:
-            self._draw_text_label(page, bbox)
 
     def _apply_black_box(self, page: fitz.Page, bbox: tuple) -> None:
         """
@@ -357,80 +384,7 @@ class Anonymizer:
         # fill: color de relleno después de eliminar el contenido
         page.add_redact_annot(rect, fill=self.settings.redaction_color)
 
-    def _apply_text_label(self, page: fitz.Page, bbox: tuple) -> None:
-        """
-        Aplica redacción destructiva (fondo blanco) para vaciar el área.
-        El texto se dibuja a posteriori en _draw_text_label.
-        """
-        rect = fitz.Rect(bbox)
-        # Relleno blanco para borrar cualquier trazo previo
-        page.add_redact_annot(rect, fill=(1.0, 1.0, 1.0))
-        
-    def _draw_text_label(self, page: fitz.Page, bbox: tuple) -> None:
-        """
-        Dibuja el texto genérico en una sola línea.
-        Expande la caja virtual si la original es demasiado estrecha para evitar saltos.
-        """
-        rect = fitz.Rect(bbox)
-        text = "[ANONIMIZADO]"
-        
-        # Tamaño de fuente proporcional a la altura de la caja (legible)
-        fontsize = max(5.0, min(10.0, rect.height * 0.7))
-        
-        # Ancho mínimo requerido para evitar saltos de línea (estimación conservadora)
-        min_width = len(text) * (fontsize * 0.55)
-        
-        # Si la caja original es estrecha (ej. ocultando la palabra "DNI"), 
-        # creamos una caja virtual más ancha centrada para que el texto no salte de línea.
-        if rect.width < min_width:
-            diff = (min_width - rect.width) / 2
-            draw_rect = fitz.Rect(rect.x0 - diff, rect.y0, rect.x1 + diff, rect.y1)
-        else:
-            draw_rect = rect
-            
-        page.insert_textbox(
-            draw_rect,
-            text,
-            fontsize=fontsize,
-            fontname="helv",
-            color=(0.0, 0.0, 0.0),
-            align=1
-        )
 
-    def _apply_scanned_text_label(self, page: fitz.Page, rect: fitz.Rect) -> None:
-        """
-        Dibuja un rectángulo de fondo blanco y el texto en una sola línea
-        para páginas escaneadas o overlays de imagen.
-        """
-        # 1. Dibujar fondo blanco (tachón)
-        shape = page.new_shape()
-        shape.draw_rect(rect)
-        shape.finish(
-            fill=(1.0, 1.0, 1.0),
-            color=(1.0, 1.0, 1.0),
-            width=0
-        )
-        shape.commit()
-        
-        # 2. Insertar texto expandiendo el área virtual para evitar saltos
-        text = "[ANONIMIZADO]"
-        fontsize = max(5.0, min(10.0, rect.height * 0.7))
-        min_width = len(text) * (fontsize * 0.55)
-        
-        if rect.width < min_width:
-            diff = (min_width - rect.width) / 2
-            draw_rect = fitz.Rect(rect.x0 - diff, rect.y0, rect.x1 + diff, rect.y1)
-        else:
-            draw_rect = rect
-            
-        page.insert_textbox(
-            draw_rect,
-            text,
-            fontsize=fontsize,
-            fontname="helv",
-            color=(0.0, 0.0, 0.0),
-            align=1
-        )
 
     def _apply_pixelation(self, page: fitz.Page, bbox: tuple) -> None:
         """

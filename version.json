@@ -1,20 +1,20 @@
 {
-  "build": 24,
-  "date": "2026-08-09T10:09:00Z",
+  "build": 25,
+  "date": "2026-08-09T13:00:47Z",
   "platforms": {
     "mac": {
       "arch": "Universal",
-      "filename": "Anonidata.dmg",
+      "filename": "AnoniData.dmg",
       "label": "macOS (.dmg)",
-      "url": "https://github.com/tban/anonidata/releases/download/v1.0.20/Anonidata.dmg"
+      "url": "https://github.com/tban/anonidata/releases/download/v1.0.21/Anonidata.dmg"
     },
     "windows": {
       "arch": "x64",
-      "filename": "anonidata.exe",
+      "filename": "AnoniData.exe",
       "label": "Windows (.exe)",
-      "url": "https://github.com/tban/anonidata/releases/download/v1.0.20/anonidata.exe"
+      "url": "https://github.com/tban/anonidata/releases/download/v1.0.21/anonidata.exe"
     }
   },
   "productName": "AnoniData",
-  "version": "1.0.20"
+  "version": "1.0.21"
 }

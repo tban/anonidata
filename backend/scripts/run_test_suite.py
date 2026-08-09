@@ -21,15 +21,15 @@ def get_pdf_metadata(pdf_path):
 def main():
     test_files = {
         "v1": {
-            "path": Path("/Users/tban/Library/CloudStorage/GoogleDrive-tbanrguez@gmail.com/Mi unidad/PUBLICAPPS/ANONIDATA/TEST/plantilla_prueba_datos_personales_v1.pdf"),
+            "path": Path("/Users/tban/Documents/Desarrollos/anonidata/test/plantilla_prueba_datos_personales_v1.pdf"),
             "expected_total": 56
         },
         "v2": {
-            "path": Path("/Users/tban/Library/CloudStorage/GoogleDrive-tbanrguez@gmail.com/Mi unidad/PUBLICAPPS/ANONIDATA/TEST/plantilla_prueba_datos_personales_v2.pdf"),
+            "path": Path("/Users/tban/Documents/Desarrollos/anonidata/test/plantilla_prueba_datos_personales_v2.pdf"),
             "expected_total": 94
         },
         "v3": {
-            "path": Path("/Users/tban/Library/CloudStorage/GoogleDrive-tbanrguez@gmail.com/Mi unidad/PUBLICAPPS/ANONIDATA/TEST/plantilla_prueba_datos_personales_v3.pdf"),
+            "path": Path("/Users/tban/Documents/Desarrollos/anonidata/test/plantilla_prueba_datos_personales_v3.pdf"),
             "expected_total": 134
         }
     }
@@ -63,6 +63,12 @@ def main():
             pdf_path_to_process = Path(ocr_engine.create_searchable_pdf(str(pdf_path)))
         else:
             pdf_path_to_process = pdf_path
+            
+        # Configure v3 to use text_label anonymization
+        if template_key == "v3":
+            processor.settings.redaction_strategy = "text_label"
+        else:
+            processor.settings.redaction_strategy = "black_box"
             
         result = processor.process_file(str(pdf_path_to_process))
         

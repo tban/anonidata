@@ -6,6 +6,7 @@ import logoImage from './assets/logo.png';
 import { anonidata, listen } from './lib/tauri-bridge';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask } from '@tauri-apps/plugin-dialog';
+import { SettingsModal, AppSettings } from './components/SettingsModal';
 
 interface FileItem {
   path: string;
@@ -40,6 +41,7 @@ function App() {
   const [ocrPromptFiles, setOcrPromptFiles] = useState<string[]>([]);
   const [bulkOcrDecision, setBulkOcrDecision] = useState<'yes' | 'no' | null>(null);
   const [redactionStrategy, setRedactionStrategy] = useState<'black_box' | 'text_label'>('black_box');
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const bulkOcrDecisionRef = React.useRef<'yes' | 'no' | null>(null);
 
   const reviewStateRef = React.useRef<ReviewState | null>(null);
@@ -86,6 +88,21 @@ function App() {
       unlistenAbout.then((fn) => fn());
       unlistenUpdates.then((fn) => fn());
     };
+  }, []);
+
+  // Cargar configuración de usuario al iniciar
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const storedSettings = await anonidata.store.get('app_settings') as AppSettings | null;
+        if (storedSettings?.defaultRedactionStrategy) {
+          setRedactionStrategy(storedSettings.defaultRedactionStrategy);
+        }
+      } catch (e) {
+        console.error('Error loading initial settings:', e);
+      }
+    };
+    loadSettings();
   }, []);
 
   // Listener para recibir actualizaciones de progreso en tiempo real del backend
@@ -253,15 +270,7 @@ function App() {
         setFiles((prev) => prev.map((f) => (f.path === file.path ? { ...f, pdfType, pages } : f)));
 
         if (pdfType === 'image') {
-          if (bulkOcrDecisionRef.current === 'yes') {
-            processSingleOcrDecision(file.path, 'yes');
-          } else if (bulkOcrDecisionRef.current === 'no') {
-            setFiles((prev) =>
-              prev.map((f) => (f.path === file.path ? { ...f, ocrOption: 'no' } : f))
-            );
-          } else {
-            setOcrPromptFiles((prev) => [...prev, file.path]);
-          }
+          processSingleOcrDecision(file.path, 'yes');
         }
       } catch (e) {
         console.error('Error detectando tipo de PDF:', e);
@@ -473,14 +482,7 @@ function App() {
   const handleProcess = async () => {
     if (files.length === 0) return;
 
-    // Separar archivos de texto (o imagen con OCR) de los de imagen sin OCR
-    const textFiles = files.filter(
-      (f) =>
-        f.pdfType === 'text' ||
-        f.pdfType === 'text_ocr' ||
-        (f.pdfType === 'image' && f.ocrOption === 'yes')
-    );
-    const imageFiles = files.filter((f) => f.pdfType === 'image' && f.ocrOption !== 'yes');
+    const processableFiles = files.filter((f) => f.pdfType !== 'detecting');
     const detectingFiles = files.filter((f) => f.pdfType === 'detecting');
 
     // Si hay archivos aún detectando, esperar
@@ -505,24 +507,7 @@ function App() {
     }
 
     // Si no hay archivos procesables
-    if (textFiles.length === 0) {
-      setCompletionData({
-        type: 'partial',
-        successCount: 0,
-        errorCount: 0,
-        totalFiles: imageFiles.length,
-        processingTime: '0',
-        warnings: [
-          {
-            file: `${imageFiles.length} PDF(s) de imagen detectado(s)`,
-            warnings: [
-              'Los PDFs de imagen no se pueden procesar automáticamente si no activas el OCR.',
-              'Utiliza el botón "Revisión manual" para cada archivo de imagen o actívales el OCR.',
-            ],
-          },
-        ],
-      });
-      setShowCompletionModal(true);
+    if (processableFiles.length === 0) {
       return;
     }
 
@@ -532,15 +517,11 @@ function App() {
     const startTime = Date.now();
 
     try {
-      // Solo procesar archivos de texto (o de imagen con OCR habilitado)
-      const filePaths = textFiles.map((f) => f.path);
+      const filePaths = processableFiles.map((f) => f.path);
 
-      // Actualizar estados: procesando para texto/OCR, skipped para imagen sin OCR
+      // Actualizar estado a processing para todos los archivos
       setFiles((prev) =>
         prev.map((f) => {
-          if (f.pdfType === 'image' && f.ocrOption !== 'yes') {
-            return { ...f, status: 'completed' as const, progress: 100 };
-          }
           return { ...f, status: 'processing' as const, progress: 0 };
         })
       );
@@ -583,12 +564,7 @@ function App() {
       // Actualizar resultados para archivos procesados
       setFiles((prev) =>
         prev.map((f) => {
-          // Mantener estado de imagen como completado (saltado) si no se le activó OCR
-          if (f.pdfType === 'image' && f.ocrOption !== 'yes') {
-            return f;
-          }
-          // Buscar resultado correspondiente para archivos de texto/OCR procesados
-          const resultIdx = textFiles.findIndex((tf) => tf.path === f.path);
+          const resultIdx = processableFiles.findIndex((pf) => pf.path === f.path);
           if (resultIdx >= 0 && result.results[resultIdx]) {
             const fileResult = result.results[resultIdx];
             return {
@@ -607,7 +583,7 @@ function App() {
       // Contar archivos exitosos y fallidos
       const successCount = result.results.filter((r) => r.status === 'success').length;
       const errorCount = result.results.filter((r) => r.status === 'error').length;
-      const totalFiles = result.results.length + imageFiles.length;
+      const totalFiles = result.results.length;
 
       // Extraer warnings de archivos exitosos
       const fileWarnings = result.results
@@ -616,17 +592,6 @@ function App() {
           file: r.inputFile.split('/').pop() || r.inputFile,
           warnings: r.warnings || [],
         }));
-
-      // Añadir advertencia para archivos de imagen saltados
-      if (imageFiles.length > 0) {
-        const imageWarning = {
-          file: `${imageFiles.length} archivo(s) de imagen`,
-          warnings: imageFiles.map(
-            (f) => `"${f.name}" - Los PDFs de imagen deben procesarse mediante "Revisión manual"`
-          ),
-        };
-        fileWarnings.push(imageWarning);
-      }
 
       // Preparar datos para el modal según el resultado
       if (successCount > 0 && errorCount === 0) {
@@ -981,9 +946,9 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-stone-900 to-zinc-950 text-stone-100 selection:bg-teal-500/30">
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-4">
         {/* Header - Layout Flex para alinear icono grande y texto */}
-        <header className="flex items-center gap-6 mb-10 relative">
+        <header className="flex items-center gap-6 mb-6 relative">
           <button
             onClick={() => setShowAboutModal(true)}
             className="flex-shrink-0 w-24 h-24 flex items-center justify-center hover:scale-105 transition-transform duration-200 rounded-2xl hover:shadow-lg bg-stone-900/40 backdrop-blur-md shadow-lg border border-stone-800/80"
@@ -992,11 +957,22 @@ function App() {
             <img src={logoImage} alt="AnoniData Logo" className="w-16 h-16 object-contain" />
           </button>
 
-          <div className="flex-1 text-center pr-24">
-            {' '}
-            {/* Padding right compensa el ancho del icono para mantener centrado el texto */}
+          <div className="flex-1 text-center">
             <h1 className="text-4xl font-bold text-stone-100 mb-2 tracking-tight">AnoniData</h1>
             <p className="text-stone-400">Anonimización de PDFs conforme a RGPD</p>
+          </div>
+
+          <div className="flex-shrink-0 w-24 flex justify-end">
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className="text-stone-400 hover:text-white transition-colors p-3 rounded-full hover:bg-stone-800/60 hover:shadow-lg border border-transparent hover:border-stone-700/50 bg-stone-900/20 backdrop-blur-sm"
+              title="Ajustes"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
           </div>
         </header>
 
@@ -1005,7 +981,7 @@ function App() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border-4 border-dashed rounded-2xl p-12 mb-6 text-center transition-all duration-300 ${
+          className={`border-4 border-dashed rounded-2xl p-8 mb-4 text-center transition-all duration-300 ${
             isDragActive
               ? 'border-teal-500 bg-teal-950/20 shadow-teal-500/10 scale-105 shadow-2xl'
               : 'border-stone-800 bg-stone-900/30 hover:border-stone-700/60 shadow-md hover:shadow-lg'
@@ -1046,36 +1022,23 @@ function App() {
           </div>
         </div>
 
-        {/* Opciones de Anonimización */}
-        {files.length > 0 && !isProcessing && (
-          <div className="max-w-md mx-auto mb-6 p-5 rounded-2xl bg-stone-900/40 border border-stone-850 shadow-lg backdrop-blur-md flex flex-col gap-3">
-            <h3 className="text-sm font-semibold text-stone-300 flex items-center gap-2">
-              ⚙️ Opciones de Ocultación
-            </h3>
-            <div className="flex items-center justify-between gap-4">
-              <label htmlFor="redaction-strategy-select" className="text-xs text-stone-400">
-                Tipo de anonimización:
-              </label>
-              <select
-                id="redaction-strategy-select"
-                value={redactionStrategy}
-                onChange={(e) => setRedactionStrategy(e.target.value as 'black_box' | 'text_label')}
-                className="bg-stone-950 text-stone-200 border border-stone-800 rounded-lg px-3 py-2 text-xs focus:border-teal-500 outline-none cursor-pointer"
-              >
-                <option value="black_box">Tachón gris (Caja de relleno)</option>
-                <option value="text_label">Texto [ANONIMIZADO]</option>
-              </select>
-            </div>
-          </div>
-        )}
+
 
         {/* Process Button - Always visible above the list */}
         {files.length > 0 && (
           <div className="text-center mb-6">
             <button
               onClick={handleProcess}
-              disabled={isProcessing || files.every((f) => f.status === 'completed')}
-              className="btn-primary btn-ripple scale-on-hover"
+              disabled={
+                isProcessing ||
+                files.some((f) => f.pdfType === 'detecting' || f.status === 'processing') ||
+                files.every((f) => f.status === 'completed')
+              }
+              className={`btn-primary btn-ripple scale-on-hover ${
+                files.some((f) => f.pdfType === 'detecting') && !isProcessing
+                  ? 'opacity-70 cursor-not-allowed'
+                  : ''
+              }`}
             >
               {isProcessing ? (
                 <span className="flex items-center justify-center gap-3">
@@ -1651,88 +1614,20 @@ function App() {
         </div>
       )}
 
-      {/* Modal de Confirmación de OCR */}
-      {ocrPromptFiles.length > 0 &&
-        ocrPromptFiles[0] &&
-        (() => {
-          const currentOcrPromptFile = ocrPromptFiles[0];
-          const currentOcrPromptFileName =
-            currentOcrPromptFile.split('/').pop() || currentOcrPromptFile;
-          return (
-            <div className="modal-backdrop backdrop-blur-strong p-4">
-              <div className="modal-content glass rounded-2xl shadow-2xl max-w-md w-full border-2 border-stone-800/80 p-6">
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 bg-amber-950/40 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                    <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                      />
-                    </svg>
-                  </div>
-                  <h3 className="text-xl font-bold text-stone-100 mb-2">
-                    Reconocimiento de Texto (OCR)
-                  </h3>
-                  <p className="text-sm text-stone-400">
-                    El archivo{' '}
-                    <strong className="text-stone-200 break-all">
-                      "{currentOcrPromptFileName}"
-                    </strong>{' '}
-                    ha sido identificado como una imagen o escaneo (no contiene texto
-                    seleccionable).
-                  </p>
-                </div>
 
-                <div className="bg-amber-950/20 border border-amber-900/40 rounded-xl p-4 mb-6">
-                  <p className="text-xs text-amber-400 leading-relaxed">
-                    Para poder buscar y ocultar datos personales (PII) automáticamente en este
-                    documento, es necesario aplicar OCR. Si decides no aplicarlo, solo se detectarán
-                    firmas u otros elementos visuales si los hay, y deberás revisarlo manualmente de
-                    forma detallada.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => handleOcrDecision(currentOcrPromptFile, 'yes')}
-                      className="py-3 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white font-semibold rounded-xl shadow-md transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-sm"
-                    >
-                      <span>🔍</span> Sí, a este
-                    </button>
-                    <button
-                      onClick={() => handleOcrDecision(currentOcrPromptFile, 'no')}
-                      className="py-3 bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold rounded-xl transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer border border-stone-700/50 text-sm"
-                    >
-                      <span>❌</span> No, omitir
-                    </button>
-                  </div>
-
-                  <div className="border-t border-stone-800/80 my-1"></div>
-
-                  <button
-                    onClick={() => handleOcrDecision(currentOcrPromptFile, 'yes_all')}
-                    className="w-full py-3 bg-teal-950/40 hover:bg-teal-900/40 text-teal-400 font-semibold rounded-xl border border-teal-800/60 transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-sm"
-                  >
-                    <span>⏩</span> Sí a todos los restantes
-                  </button>
-
-                  <button
-                    onClick={() => handleOcrDecision(currentOcrPromptFile, 'no_all')}
-                    className="w-full py-3 bg-stone-900 hover:bg-stone-850 text-stone-400 font-semibold rounded-xl border border-stone-800/60 transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer text-sm"
-                  >
-                    <span>⏭️</span> No a todos los restantes
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
 
       {/* Componente de actualización automática */}
       <UpdateNotification />
+
+      {/* Modal de Configuración */}
+      {showSettingsModal && (
+        <SettingsModal
+          onClose={() => setShowSettingsModal(false)}
+          onSettingsSaved={(newSettings) => {
+            setRedactionStrategy(newSettings.defaultRedactionStrategy);
+          }}
+        />
+      )}
     </div>
   );
 }
