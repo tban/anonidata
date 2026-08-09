@@ -30,7 +30,7 @@
 Cuando el usuario pida ejecutar el flujo "COMPILA BUILD", debes realizar estrictamente los siguientes pasos en orden:
 1. **Incrementar versión**: Sube la versión (patch) en `package.json`, `src-tauri/tauri.conf.json` y `src-tauri/Cargo.toml`.
 2. **Sincronizar código a la VM Windows**: Ejecuta el script `./scripts/sync-to-windows.sh` para copiar el código fresco a la máquina virtual y que el usuario empiece a compilar allí.
-3. **Compilar versión Mac**: Ejecuta localmente `npm run build:backend && npm run build` para compilar la nueva versión en segundo plano.
+3. **Compilar versión Mac con Notarización**: Ejecuta localmente `set -a; source .env; set +a; npm run build:backend && npm run build` para que las variables de Apple se carguen y la app quede notarizada automáticamente. Hazlo en segundo plano.
 4. **Pausa y Cartel**: Muestra un mensaje al usuario con un cartelito muy grande (usando Markdown headers o ASCII art) indicando que la compilación de Mac está en marcha/terminada y que **ESTÁS ESPERANDO A QUE EL USUARIO COMPILE WINDOWS**.
 5. **Publicación y Versionado**: Solo **después** de que el usuario te avise de que ha terminado de compilar en Windows, debes:
    - Extraer el `.exe` desde la máquina virtual (conectándote por SMB).
