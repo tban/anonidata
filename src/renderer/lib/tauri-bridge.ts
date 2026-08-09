@@ -46,6 +46,7 @@ export const anonidata = {
 
   app: {
     getVersion: () => invoke<string>('get_app_version'),
+    checkUpdatesManual: () => invoke<void>('check_for_updates_manual'),
   },
 
   store: {

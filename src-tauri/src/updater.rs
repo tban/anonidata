@@ -45,6 +45,7 @@ pub fn check_for_updates_in_background(app: AppHandle) {
     });
 }
 
+#[tauri::command]
 pub fn check_for_updates_manual(app: AppHandle) {
     std::thread::spawn(move || {
         log::info!("Starting manual update check...");

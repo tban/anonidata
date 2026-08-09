@@ -151,7 +151,8 @@ pub fn run() {
             commands::apply_ocr,
             commands::restart_backend,
             commands::get_file_size,
-            commands::fetch_url_backend
+            commands::fetch_url_backend,
+            updater::check_for_updates_manual
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
